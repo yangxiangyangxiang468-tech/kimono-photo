@@ -1,6 +1,6 @@
 // オフラインでも開けるようにするサービスワーカー
 // index.html は「通信できれば最新、だめなら保存済み」、ほかのファイル（フォント・アイコン・AI の部品とモデル）は保存済みを優先
-const CACHE = "kimono-photo-v1";
+const CACHE = "kimono-photo-v2";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icons/apple-touch-icon.png", "./icons/icon-192.png", "./icons/icon-512.png"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => Promise.all(CORE.map(u => c.add(u).catch(() => {})))).then(() => self.skipWaiting()));

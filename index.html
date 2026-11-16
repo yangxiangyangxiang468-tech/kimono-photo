@@ -350,7 +350,13 @@ document.addEventListener("click", async e => {
   const out = $("#out");
   switch (el.dataset.act) {
     case "back": history.back(); break;
-    case "save": out.toBlob(b => { if (!b) return; const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `kimono-${Date.now()}.jpg`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast("保存しました"); }, "image/jpeg", 0.92); break;
+    case "save": out.toBlob(async b => {
+      if (!b) return;
+      // iPhone・iPad はダウンロードだと写真アプリに入らないので、共有シートの「画像を保存」から入れてもらう
+      const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const file = new File([b], `kimono-${Date.now()}.jpg`, { type: "image/jpeg" });
+      if (ios && navigator.canShare?.({ files: [file] })) { toast("「画像を保存」を押すと写真に入ります"); try { await navigator.share({ files: [file] }); } catch (err) {} return; }
+      const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `kimono-${Date.now()}.jpg`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast("保存しました"); }, "image/jpeg", 0.92); break;
     case "share": out.toBlob(async b => {
       if (!b) return; const file = new File([b], "kimono.jpg", { type: "image/jpeg" });
       if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: "きものフォト" }); } catch (err) {} }

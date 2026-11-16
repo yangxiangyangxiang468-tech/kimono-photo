@@ -11,6 +11,13 @@
 2. 柄（麻の葉・青海波・桜・矢絣・市松）と色（朱・紺・桃・萌黄・藤・墨）を選ぶ。写真を長押しすると元の写真と比べられる
 3. 「保存」で端末に保存、「送る」で共有
 
+## iPhone で使う
+
+1. このリポジトリを GitHub に置き、Settings → Pages で「Deploy from a branch」・`main`・`/ (root)` を選んで公開する（https で配信されることが必要）
+2. iPhone の Safari で公開された URL（`https://<ユーザー名>.github.io/kimono-photo/`）を開く
+3. 共有ボタン →「ホーム画面に追加」。以後はアイコンからアプリのように全画面で開ける
+4. 「保存」を押すと共有シートが開くので、「画像を保存」を選ぶと写真アプリに入る
+
 ## しくみ（index.html 内）
 
 - AI は Google MediaPipe（`@mediapipe/tasks-vision`、端末の中で動く。初めてのときに約30MBを読み込み、`sw.js` が保存して2回目からはすぐ使える）
