@@ -2,6 +2,8 @@
 
 写真を撮ると、着物を着た写真になる。スマホのブラウザで動き、ホーム画面に入れるとアプリのように使える。
 
+公開URL: https://yangxiangyangxiang468-tech.github.io/kimono-photo/
+
 - `index.html` 1ファイルで動く（ビルド不要）。`manifest.webmanifest`・`sw.js`・`icons/` はホーム画面に追加してアプリとして使うためのもの
 - 写真は端末の中だけで処理し、どこにも送らない
 
@@ -14,7 +16,7 @@
 ## iPhone で使う
 
 1. このリポジトリを GitHub に置き、Settings → Pages で「Deploy from a branch」・`main`・`/ (root)` を選んで公開する（https で配信されることが必要）
-2. iPhone の Safari で公開された URL（`https://<ユーザー名>.github.io/kimono-photo/`）を開く
+2. iPhone の Safari で公開された URL（https://yangxiangyangxiang468-tech.github.io/kimono-photo/ ）を開く
 3. 共有ボタン →「ホーム画面に追加」。以後はアイコンからアプリのように全画面で開ける
 4. 「保存」を押すと共有シートが開くので、「画像を保存」を選ぶと写真アプリに入る
 
