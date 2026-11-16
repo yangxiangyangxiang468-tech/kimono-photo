@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>きものフォト</title>
+<meta name="description" content="写真を撮ると、着物を着た写真になる">
+<meta name="theme-color" content="#f6efe6">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="きものフォト">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@700;800&family=Zen+Maru+Gothic:wght@500;700&display=swap">
+<style>
+/* 和紙の生成り地に、朱と墨。写真が主役なので、まわりは静かに */
+:root {
+  --paper: #f6efe6;
+  --card: #fffaf3;
+  --ink: #2a2320;
+  --muted: #7a6d64;
+  --line: #e2d6c8;
+  --shu: #c8323b;
+  --gold: #c99a2e;
+  --shadow: 0 1px 0 rgba(42,35,32,.06), 0 8px 24px -12px rgba(42,35,32,.35);
+  --f-title: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --f-body: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", "Hiragino Sans", system-ui, sans-serif;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; min-height: 100%; overscroll-behavior: none; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--paper); color: var(--ink); font-family: var(--f-body); font-weight: 500; font-size: 15px; line-height: 1.7;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  -webkit-tap-highlight-color: transparent;
+}
+button, input { font: inherit; color: inherit; }
+.wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 18px; }
+.vh { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+h1 { font-family: var(--f-title); font-weight: 800; font-size: clamp(38px, 9vw, 64px); line-height: 1.1; margin: 0; letter-spacing: .06em; }
+h1 em { font-style: normal; color: var(--shu); }
+.lead { margin: 0; color: var(--muted); }
+.btn { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1.5px solid var(--ink); background: var(--card); color: var(--ink);
+  border-radius: 999px; padding: 10px 18px; font-weight: 700; cursor: pointer; text-align: center; touch-action: manipulation; }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--shu); border-color: var(--shu); color: #fff; }
+.btn.big { padding: 16px 26px; font-size: 18px; }
+.btn.quiet { border-color: var(--line); color: var(--muted); background: transparent; }
+.btns { display: flex; gap: 10px; flex-wrap: wrap; }
+.note { color: var(--muted); font-size: 13px; margin: 0; }
+.hero { display: grid; gap: 12px; padding-top: 8px; }
+.samples { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; }
+.samples div { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; font-size: 13.5px; }
+.samples b { display: block; font-family: var(--f-title); font-size: 18px; color: var(--shu); }
+
+.studio { display: grid; gap: 16px; align-items: start; }
+@media (min-width: 820px) { .studio { grid-template-columns: minmax(0, 1fr) 300px; } }
+.photo { position: relative; background: #e9e0d4; border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); line-height: 0; min-height: 200px; }
+.photo canvas { width: 100%; height: auto; display: block; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.busy { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; background: rgba(246,239,230,.82); line-height: 1.6; text-align: center; padding: 20px; font-weight: 700; }
+.spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--shu); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.hold { position: absolute; left: 12px; bottom: 12px; line-height: 1; }
+.panel { display: grid; gap: 16px; }
+.group { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: grid; gap: 10px; }
+.group h3 { margin: 0; font-size: 15px; }
+.chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
+.chip { border: 1.5px solid var(--line); background: var(--card); border-radius: 12px; padding: 6px 4px 8px; display: grid; justify-items: center; gap: 4px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.chip.on { border-color: var(--ink); box-shadow: 0 0 0 2px var(--gold); }
+.chip canvas { width: 54px; height: 40px; border-radius: 6px; display: block; }
+.dot { width: 34px; height: 34px; border-radius: 50%; border: 2px solid rgba(0,0,0,.15); }
+.toast { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: #fff; padding: 9px 16px; border-radius: 10px; z-index: 60; max-width: calc(100% - 32px); font-size: 14px; }
+</style>
+
+<!-- はじめ -->
+<section id="home" class="screen">
+  <div class="wrap">
+    <header class="hero">
+      <h1>きもの<em>フォト</em></h1>
+      <p class="lead">写真を撮ると、着物を着た写真になります。柄と色はあとから選べます。</p>
+    </header>
+    <div class="btns"><label class="btn big primary" for="photoIn">📷 写真を撮る・選ぶ</label></div>
+    <input type="file" id="photoIn" accept="image/*" class="vh">
+    <div class="samples">
+      <div><b>1 撮る</b>正面を向いて立ち、上半身か全身が写るように撮ってください。肩と腰が見えるときれいに着せられます（横向きや歩いている写真は苦手です）。</div>
+      <div><b>2 選ぶ</b>柄（麻の葉・青海波・桜・矢絣・市松）と色を選べます。写真を長押しすると、元の写真と比べられます。</div>
+      <div><b>3 残す</b>「保存」で端末に、「送る」で友だちに。写真はこの端末の中だけで作り、どこにも送りません。</div>
+    </div>
+  </div>
+</section>
+
+<!-- 着せる -->
+<section id="studio" class="screen" hidden>
+  <div class="wrap">
+    <div class="btns"><button class="btn quiet" data-act="back">← 撮り直す</button></div>
+    <div class="studio">
+      <div class="photo">
+        <canvas id="out"></canvas>
+        <div class="busy" id="busy" hidden><div class="spin"></div><div id="busyText">準備しています…</div></div>
+        <button class="btn hold" id="holdBtn" hidden>押している間は元の写真</button>
+      </div>
+      <div class="panel">
+        <div class="group"><h3>柄</h3><div class="chips" id="patterns"></div></div>
+        <div class="group"><h3>色</h3><div class="chips" id="colors"></div></div>
+        <div class="btns"><button class="btn primary" data-act="save">保存</button><button class="btn" data-act="share">送る</button></div>
+        <p class="note" id="note"></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+// ==KIMONO START== （ここから ==KIMONO END== までは、写真と体の位置から着物を描く処理。画面には触らないので node でも動かせる）
+// 体の位置（MediaPipe Pose の 33 点、x・y は 0〜1）。11/12 = 左/右の肩、13/14 = ひじ、15/16 = 手首、23/24 = 腰、25/26 = ひざ、27/28 = 足首。「左」は写っている人から見た左
+const PATTERNS = [
+  { id: "asanoha", name: "麻の葉" }, { id: "seigaiha", name: "青海波" }, { id: "sakura", name: "桜" }, { id: "yagasuri", name: "矢絣" }, { id: "ichimatsu", name: "市松" },
+];
+const COLORS = [
+  { id: "shu", name: "朱", base: "#b8262f", accent: "#f2c45a", obi: "#e8c35a", eri: "#fff7ea" },
+  { id: "kon", name: "紺", base: "#1f3563", accent: "#e9eef7", obi: "#c9a24a", eri: "#ffffff" },
+  { id: "momo", name: "桃", base: "#e58aa3", accent: "#fff3f5", obi: "#7a2f4a", eri: "#ffffff" },
+  { id: "moegi", name: "萌黄", base: "#4d7d3a", accent: "#f4e7a6", obi: "#b7382f", eri: "#fffbe8" },
+  { id: "fuji", name: "藤", base: "#6b4f9c", accent: "#f3d9ea", obi: "#d9b25a", eri: "#ffffff" },
+  { id: "sumi", name: "墨", base: "#26221f", accent: "#d5373f", obi: "#d9b25a", eri: "#ffffff" },
+];
+// 柄の 1 枚分（size × size）を描く。newCanvas(w, h) はキャンバスを作る関数（ブラウザでも node でも）
+function patternTile(newCanvas, id, size, base, accent) {
+  const cv = newCanvas(size, size), c = cv.getContext("2d"), s = size;
+  c.fillStyle = base; c.fillRect(0, 0, s, s);
+  c.strokeStyle = accent; c.fillStyle = accent; c.lineWidth = Math.max(1, s * 0.035); c.lineCap = "round";
+  if (id === "asanoha") { // 六角の中に星。上下左右につながる
+    const h = s / 2, line = (x1, y1, x2, y2) => { c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); };
+    for (const [cx, cy] of [[0, 0], [s, 0], [0, s], [s, s], [h, h]]) for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; line(cx, cy, cx + Math.cos(a) * h * 0.58, cy + Math.sin(a) * h * 0.58); }
+    line(0, h, s, h); line(h, 0, h, s); line(0, 0, s, s); line(s, 0, 0, s);
+  } else if (id === "seigaiha") { // 重なる波
+    c.lineWidth = Math.max(1, s * 0.028);
+    for (const [cx, cy] of [[0, s / 2], [s, s / 2], [s / 2, s], [0, s * 1.5], [s, s * 1.5], [s / 2, 0]]) for (let k = 4; k >= 1; k--) {
+      c.beginPath(); c.arc(cx, cy, s / 2 * k / 4, Math.PI, 0); c.fillStyle = k % 2 ? base : base; c.fill(); c.stroke();
+    }
+  } else if (id === "sakura") { // 5 枚の花びら
+    const flower = (x, y, r, rot) => { for (let k = 0; k < 5; k++) { const a = rot + k * 2 * Math.PI / 5; c.beginPath(); c.ellipse(x + Math.cos(a) * r * 0.55, y + Math.sin(a) * r * 0.55, r * 0.5, r * 0.32, a, 0, 7); c.fill(); }
+      c.fillStyle = base; c.beginPath(); c.arc(x, y, r * 0.16, 0, 7); c.fill(); c.fillStyle = accent; };
+    flower(s * 0.28, s * 0.3, s * 0.2, 0.2); flower(s * 0.76, s * 0.72, s * 0.17, 1.1); flower(s * 0.82, s * 0.16, s * 0.08, 0.6); flower(s * 0.2, s * 0.82, s * 0.07, 2.0);
+  } else if (id === "yagasuri") { // 矢羽根を縦に並べる
+    const w = s / 2;
+    for (let col = 0; col < 2; col++) { const x = col * w, y0 = col ? s / 2 : 0;
+      for (const y of [y0 - s, y0]) { c.beginPath(); c.moveTo(x, y); c.lineTo(x + w / 2, y + s * 0.18); c.lineTo(x + w, y); c.lineTo(x + w, y + s / 2); c.lineTo(x + w / 2, y + s / 2 + s * 0.18); c.lineTo(x, y + s / 2); c.closePath(); c.fill(); } }
+  } else { // 市松
+    c.fillRect(0, 0, s / 2, s / 2); c.fillRect(s / 2, s / 2, s / 2, s / 2);
+  }
+  return cv;
+}
+// 着物の形（体の位置から、身ごろ・袖・衿・帯の位置を決める）。null = 体が見つからない
+function kimonoShape(lm, W, H) {
+  if (!lm || lm.length < 29) return null;
+  const P = i => ({ x: lm[i].x * W, y: lm[i].y * H, v: lm[i].visibility ?? 1 });
+  const add = (a, b, k = 1) => ({ x: a.x + b.x * k, y: a.y + b.y * k }), lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const Ls = P(11), Rs = P(12); if (Ls.v < 0.3 || Rs.v < 0.3) return null;
+  const sm = lerp(Ls, Rs, 0.5);
+  let Lh = P(23), Rh = P(24), sw = Math.hypot(Ls.x - Rs.x, Ls.y - Rs.y);
+  const hipsOk = Lh.v > 0.3 && Rh.v > 0.3 && lerp(Lh, Rh, 0.5).y > sm.y + Math.max(sw, H * 0.04) * 0.6;
+  // 横を向いていると肩幅が狭く写るので、胴の長さからも大きさを決める
+  if (hipsOk) sw = Math.max(sw, Math.hypot(lerp(Lh, Rh, 0.5).x - sm.x, lerp(Lh, Rh, 0.5).y - sm.y) * 0.62);
+  if (sw < Math.min(W, H) * 0.05) return null;
+  if (!hipsOk) { Lh = { x: Ls.x - (Ls.x - sm.x) * 0.15, y: sm.y + sw * 1.55 }; Rh = { x: Rs.x - (Rs.x - sm.x) * 0.15, y: sm.y + sw * 1.55 }; }
+  const hm = lerp(Lh, Rh, 0.5), tl = Math.hypot(hm.x - sm.x, hm.y - sm.y);
+  const down = { x: (hm.x - sm.x) / tl, y: (hm.y - sm.y) / tl };
+  const sl = Math.hypot(Ls.x - Rs.x, Ls.y - Rs.y), side = sl > sw * 0.3 ? { x: (Ls.x - Rs.x) / sl, y: (Ls.y - Rs.y) / sl } : { x: -down.y, y: down.x }; // 右肩 → 左肩（写真では、正面向きなら左 → 右）
+  // すその高さ：足首が見えていればその少し下、ひざまでならその先、それも無ければ写真の下まで
+  const A = [P(27), P(28)].filter(p => p.v > 0.5), K = [P(25), P(26)].filter(p => p.v > 0.5);
+  const hemY = A.length ? Math.max(...A.map(p => p.y)) + sw * 0.08 : K.length ? Math.max(...K.map(p => p.y)) + (Math.max(...K.map(p => p.y)) - hm.y) * 0.9 : H + 2;
+  const hipW = Math.max(Math.hypot(Lh.x - Rh.x, Lh.y - Rh.y) * 1.25, sw * 0.95);
+  const body = [
+    add(add(Rs, side, -sw * 0.1), down, -sw * 0.02), add(add(Ls, side, sw * 0.1), down, -sw * 0.02),
+    add(hm, side, hipW / 2), { x: hm.x + hipW * 0.5 * 0.98, y: Math.min(hemY, H + 2) }, { x: hm.x - hipW * 0.5 * 0.98, y: Math.min(hemY, H + 2) }, add(hm, side, -hipW / 2),
+  ];
+  // 袖（振袖）：肩 → ひじ → 手首の手前を上のふちにして、下へ長く垂らす
+  const sleeve = (S, Ei, Wi, out) => {
+    let E = P(Ei), Wr = P(Wi);
+    if (E.v < 0.3) E = add(add(S, down, sw * 0.8), side, out * sw * 0.2);
+    if (Wr.v < 0.3) Wr = add(E, { x: E.x - S.x, y: E.y - S.y }, 0.8);
+    const Wp = lerp(E, Wr, 0.78), drop = sw * 0.95, top = [add(S, side, -out * sw * 0.15), E, Wp];
+    return { top, drop, Wp, E, S, hand: Wr };
+  };
+  const sleeves = [sleeve(Ls, 13, 15, 1), sleeve(Rs, 14, 16, -1)];
+  // 衿：首の付け根から胸元で合わせる。右前（着る人の左の衿が上）
+  const neck = add(sm, down, -sw * 0.06), vb = add(add(sm, down, sw * 0.62), side, -sw * 0.04);
+  const nL = add(neck, side, sw * 0.17), nR = add(neck, side, -sw * 0.17);
+  const obiTop = lerp(sm, hm, 0.5), obiBot = lerp(sm, hm, 0.92);
+  return { sw, down, side, body, sleeves, neck, nL, nR, vb, obiTop, obiBot, hipW, hm, sm, Ls, Rs, hemY };
+}
+// 着物を描いた層（写真と同じ大きさ、着物の所だけ色がある）を返す。
+// photo: 写真のキャンバス（ぼかした明るさを着物に写して、しわや影をなじませる）。
+// seg: { mask: 1 点ごとの種類, w, h }（0 = 背景、1 = 髪、2 = 肌、3 = 顔、4 = 服、5 = 小物）。着ている服と腕・脚をまるごと着物で覆い、顔・髪・手は手前に残す
+function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
+  const k = kimonoShape(lm, W, H); if (!k) return null;
+  const col = COLORS.find(c => c.id === opts.color) || COLORS[0], layer = newCanvas(W, H), c = layer.getContext("2d");
+  const tile = patternTile(newCanvas, opts.pattern, Math.max(16, Math.round(k.sw * 0.42)), col.base, col.accent), pat = c.createPattern(tile, "repeat");
+  const poly = (ctx, pts, fill) => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); };
+  const add = (a, b, f = 1) => ({ x: a.x + b.x * f, y: a.y + b.y * f }), seam = "rgba(0,0,0,.22)";
+  const below = (p, from, dist = 0) => (p.x - from.x) * k.down.x + (p.y - from.y) * k.down.y > dist; // 首より下か
+  const hands = k.sleeves.map(s => s.hand), hr = k.sw * 0.42;
+  // 1) 写真の服・腕・脚（首より下、手をのぞく）を着物の柄で覆う。マスクは小さく作って、なめらかに広げる
+  if (seg?.mask) {
+    const m = newCanvas(seg.w, seg.h), mc = m.getContext("2d"), id = mc.createImageData(seg.w, seg.h);
+    for (let y = 0; y < seg.h; y++) for (let x = 0; x < seg.w; x++) {
+      const cls = seg.mask[y * seg.w + x], p = { x: (x + 0.5) * W / seg.w, y: (y + 0.5) * H / seg.h };
+      if ((cls === 4 || cls === 5 || cls === 2) && below(p, k.neck, k.sw * 0.12) && p.y < k.hemY - k.sw * 0.13 && !hands.some(h => Math.hypot(p.x - h.x, p.y - h.y) < hr * (cls === 2 ? 1 : 0.55))) id.data[(y * seg.w + x) * 4 + 3] = 255;
+    }
+    mc.putImageData(id, 0, 0);
+    const cover = newCanvas(W, H), cc = cover.getContext("2d"); cc.imageSmoothingEnabled = true; cc.drawImage(m, 0, 0, W, H);
+    cc.globalCompositeOperation = "source-in"; cc.fillStyle = pat; cc.fillRect(0, 0, W, H);
+    c.drawImage(cover, 0, 0);
+  }
+  // 2) 着物の形：袖（振袖）は腕を包んで下へ長く垂らす。身ごろはまっすぐの筒
+  for (const s of k.sleeves) {
+    const [a, b, d] = s.top, aw = k.sw * 0.3;
+    const off = (p, q, w) => { const dx = q.x - p.x, dy = q.y - p.y, l = Math.hypot(dx, dy) || 1; return { x: -dy / l * w, y: dx / l * w }; };
+    c.lineJoin = "round"; c.lineCap = "round"; c.strokeStyle = pat; c.lineWidth = aw * 2; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.lineTo(d.x, d.y); c.stroke(); // 腕を包む
+    const bot = add(d, { x: 0, y: s.drop }), mid = add(b, { x: 0, y: s.drop * 0.9 });
+    c.beginPath(); c.moveTo(b.x, b.y); c.lineTo(d.x, d.y); c.lineTo(bot.x, bot.y - s.drop * 0.18); c.quadraticCurveTo(bot.x, bot.y, bot.x + (b.x - d.x > 0 ? 1 : -1) * s.drop * 0.18, bot.y); c.lineTo(mid.x, mid.y); c.closePath(); c.fillStyle = pat; c.fill(); // 垂れる袂
+    c.strokeStyle = seam; c.lineWidth = Math.max(1, k.sw * 0.012); c.beginPath(); c.moveTo(d.x, d.y + aw * 0.6); c.lineTo(bot.x, bot.y - s.drop * 0.2); c.stroke();
+    void off;
+  }
+  poly(c, k.body, pat);
+  c.strokeStyle = seam; c.lineWidth = Math.max(1, k.sw * 0.012);
+  for (const s of k.sleeves) { c.beginPath(); c.moveTo(s.top[0].x, s.top[0].y); c.lineTo(s.top[0].x + k.down.x * k.sw * 0.5, s.top[0].y + k.down.y * k.sw * 0.5); c.stroke(); } // 袖付け
+  c.beginPath(); c.moveTo(k.obiBot.x, k.obiBot.y); c.lineTo(k.obiBot.x + k.down.x * (k.hemY - k.obiBot.y), Math.min(H, k.hemY)); c.stroke(); // おくみ線
+  // 3) 衿元：首まわりは写真を見せて、白い衿を重ねる。右前（着る人の左の衿が上 ＝ 正面からは「y」の形）
+  c.save(); c.globalCompositeOperation = "destination-out";
+  poly(c, [add(k.nR, k.down, -k.sw * 0.6), add(k.nL, k.down, -k.sw * 0.6), add(k.nL, k.side, k.sw * 0.02), add(k.vb, k.down, -k.sw * 0.25), add(k.nR, k.side, -k.sw * 0.02)], "#000"); c.restore();
+  const band = (from, to, w, fill) => { const dx = to.x - from.x, dy = to.y - from.y, l = Math.hypot(dx, dy) || 1, nx = -dy / l * w / 2, ny = dx / l * w / 2;
+    poly(c, [{ x: from.x + nx, y: from.y + ny }, { x: to.x + nx, y: to.y + ny }, { x: to.x - nx, y: to.y - ny }, { x: from.x - nx, y: from.y - ny }], fill); };
+  const ew = k.sw * 0.11, obiL = add(k.obiTop, k.side, -k.hipW * 0.42);
+  band(k.nR, add(k.vb, k.side, -ew * 0.2), ew, col.eri); band(add(k.nR, k.side, ew * 0.25), add(k.vb, k.side, ew * 0.05), ew * 0.18, "rgba(0,0,0,.10)"); // 下になる衿（着る人の右）
+  band(k.nL, obiL, ew * 1.1, col.eri); band(add(k.nL, k.side, -ew * 0.45), add(obiL, k.side, -ew * 0.45), ew * 0.14, "rgba(0,0,0,.2)");      // 上になる衿（着る人の左）
+  // 4) 帯：胸の下から腰の上まで。帯揚げ（上の細い布）と帯締め（ひも）
+  const wAt = t => k.hipW * (1.02 + 0.06 * t), obi = [add(k.obiTop, k.side, -wAt(0) / 2), add(k.obiTop, k.side, wAt(0) / 2), add(k.obiBot, k.side, wAt(1) / 2), add(k.obiBot, k.side, -wAt(1) / 2)];
+  const on = Math.max(8, Math.round(k.sw * 0.2)), obiTile = newCanvas(on, on), ot = obiTile.getContext("2d");
+  ot.fillStyle = col.obi; ot.fillRect(0, 0, on, on); ot.fillStyle = "rgba(255,255,255,.28)"; ot.fillRect(0, on * 0.15, on, on * 0.08); ot.fillStyle = "rgba(0,0,0,.12)"; ot.fillRect(0, on * 0.6, on, on * 0.05);
+  ot.strokeStyle = "rgba(255,255,255,.35)"; ot.lineWidth = Math.max(1, on * 0.06); ot.beginPath(); ot.moveTo(on * 0.2, on * 0.45); ot.lineTo(on * 0.5, on * 0.3); ot.lineTo(on * 0.8, on * 0.45); ot.stroke();
+  poly(c, obi, c.createPattern(obiTile, "repeat"));
+  const oh = Math.hypot(k.obiBot.x - k.obiTop.x, k.obiBot.y - k.obiTop.y), cord = col.accent === "#d5373f" ? "#f2f2f2" : "#d5373f";
+  band(add(obi[0], k.down, oh * 0.05), add(obi[1], k.down, oh * 0.05), oh * 0.14, col.id === "momo" ? "#f7c8d4" : "#f0a7b8"); // 帯揚げ
+  const kn = add(k.obiTop, k.down, oh * 0.55);
+  band(add(kn, k.side, -wAt(0.5) / 2), add(kn, k.side, wAt(0.5) / 2), Math.max(2, oh * 0.08), cord); // 帯締め
+  c.fillStyle = cord; c.beginPath(); c.ellipse(kn.x, kn.y, oh * 0.1, oh * 0.07, 0, 0, 7); c.fill();
+  c.strokeStyle = "rgba(0,0,0,.25)"; c.lineWidth = Math.max(1, k.sw * 0.01); c.beginPath(); c.moveTo(obi[0].x, obi[0].y); c.lineTo(obi[1].x, obi[1].y); c.moveTo(obi[3].x, obi[3].y); c.lineTo(obi[2].x, obi[2].y); c.stroke();
+  // 5) 写真のぼかした明るさを写す（大きな影と光だけ。元の服のしま模様などは写さない）
+  if (photo) {
+    const sw2 = Math.max(8, Math.round(W / 24)), sh2 = Math.max(8, Math.round(H / 24)), small = newCanvas(sw2, sh2), sc = small.getContext("2d");
+    sc.drawImage(photo, 0, 0, sw2, sh2); const blur = newCanvas(W, H), bc = blur.getContext("2d"); bc.imageSmoothingEnabled = true; bc.drawImage(small, 0, 0, W, H);
+    const img = c.getImageData(0, 0, W, H), d = img.data, pd = bc.getImageData(0, 0, W, H).data;
+    let sum = 0, n = 0; for (let i = 0; i < W * H; i += 5) if (d[i * 4 + 3] > 0) { const p = i * 4; sum += 0.299 * pd[p] + 0.587 * pd[p + 1] + 0.114 * pd[p + 2]; n++; }
+    const mean = n ? sum / n : 128;
+    for (let i = 0; i < W * H; i++) { const p = i * 4; if (!d[p + 3]) continue;
+      const L = 0.299 * pd[p] + 0.587 * pd[p + 1] + 0.114 * pd[p + 2], f = Math.max(0.7, Math.min(1.2, 0.72 + 0.28 * L / mean));
+      d[p] = Math.min(255, d[p] * f); d[p + 1] = Math.min(255, d[p + 1] * f); d[p + 2] = Math.min(255, d[p + 2] * f); }
+    c.putImageData(img, 0, 0);
+  }
+  // 6) 顔・髪・手は着物の手前に残す（なめらかに切り抜く）
+  if (seg?.mask) {
+    const m = newCanvas(seg.w, seg.h), mc = m.getContext("2d"), id = mc.createImageData(seg.w, seg.h);
+    for (let y = 0; y < seg.h; y++) for (let x = 0; x < seg.w; x++) {
+      const cls = seg.mask[y * seg.w + x], p = { x: (x + 0.5) * W / seg.w, y: (y + 0.5) * H / seg.h };
+      if (cls === 1 || cls === 3 || (cls === 2 && (hands.some(h => Math.hypot(p.x - h.x, p.y - h.y) < hr) || !below(p, k.neck, k.sw * 0.12)))) id.data[(y * seg.w + x) * 4 + 3] = 255;
+    }
+    mc.putImageData(id, 0, 0);
+    c.save(); c.globalCompositeOperation = "destination-out"; c.imageSmoothingEnabled = true; c.drawImage(m, 0, 0, W, H); c.restore();
+  }
+  return layer;
+}
+// ==KIMONO END==
+
+// ---------- 画面 ----------
+const $ = s => document.querySelector(s);
+const newCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+let toastTimer;
+function toast(msg) { const el = $("#toast"); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.hidden = true, 2600); }
+function store(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function load(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+function show(name) { document.querySelectorAll(".screen").forEach(s => s.hidden = s.id !== name); window.scrollTo(0, 0); if (name !== "home" && !history.state?.k) history.pushState({ k: 1 }, ""); }
+addEventListener("popstate", () => { if (!$("#studio").hidden) show("home"); });
+
+// 体の位置と、髪・顔・肌の場所を見つける AI（Google MediaPipe。端末の中で動く。初めてのときに約30MBを読み込む）
+const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+const POSE_MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+const SEG_MODEL = "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite";
+let aiLoading = null;
+function loadAI() {
+  if (!aiLoading) aiLoading = (async () => {
+    const { FilesetResolver, PoseLandmarker, ImageSegmenter } = await import(MP + "/vision_bundle.mjs");
+    const files = await FilesetResolver.forVisionTasks(MP + "/wasm");
+    const pose = await PoseLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: POSE_MODEL, delegate: "CPU" }, runningMode: "IMAGE", numPoses: 1 });
+    let seg = null;
+    try { seg = await ImageSegmenter.createFromOptions(files, { baseOptions: { modelAssetPath: SEG_MODEL, delegate: "CPU" }, runningMode: "IMAGE", outputCategoryMask: true, outputConfidenceMasks: false }); } catch (e) { console.warn(e); }
+    return { pose, seg };
+  })().catch(e => { aiLoading = null; throw e; });
+  return aiLoading;
+}
+
+const state = { photo: null, W: 0, H: 0, data: null, lm: null, seg: null, pattern: load("ki_pattern", "asanoha"), color: load("ki_color", "shu"), result: null };
+function busy(text) { $("#busy").hidden = !text; if (text) $("#busyText").textContent = text; }
+function render() {
+  const out = $("#out"), { W, H } = state; if (!W) return;
+  out.width = W; out.height = H; const c = out.getContext("2d"); c.drawImage(state.photo, 0, 0);
+  const layer = drawKimono(newCanvas, W, H, state.lm, { pattern: state.pattern, color: state.color }, state.photo, state.seg);
+  state.result = !!layer; $("#holdBtn").hidden = !layer;
+  if (layer) c.drawImage(layer, 0, 0);
+  $("#note").textContent = layer ? "写真を長押し（または左下のボタン）で、元の写真と比べられます。" : "人が見つかりませんでした。正面を向いて、肩と腰が写るように撮ってみてください。";
+}
+function renderChips() {
+  const col = COLORS.find(c => c.id === state.color) || COLORS[0];
+  $("#patterns").innerHTML = PATTERNS.map(p => `<button class="chip ${p.id === state.pattern ? "on" : ""}" data-pattern="${p.id}"><canvas width="108" height="80"></canvas>${p.name}</button>`).join("");
+  document.querySelectorAll("#patterns canvas").forEach((cv, i) => { const x = cv.getContext("2d"); x.fillStyle = x.createPattern(patternTile(newCanvas, PATTERNS[i].id, 40, col.base, col.accent), "repeat"); x.fillRect(0, 0, cv.width, cv.height); });
+  $("#colors").innerHTML = COLORS.map(c => `<button class="chip ${c.id === state.color ? "on" : ""}" data-color="${c.id}"><span class="dot" style="background:${c.base}"></span>${c.name}</button>`).join("");
+}
+$("#photoIn").addEventListener("change", async e => {
+  const f = e.target.files?.[0]; e.target.value = ""; if (!f) return;
+  const url = URL.createObjectURL(f);
+  try {
+    const im = await new Promise((ok, ng) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ng; i.src = url; });
+    const k = Math.min(1, 1280 / Math.max(im.naturalWidth, im.naturalHeight)), W = Math.round(im.naturalWidth * k), H = Math.round(im.naturalHeight * k);
+    const photo = newCanvas(W, H), pc = photo.getContext("2d", { willReadFrequently: true }); pc.drawImage(im, 0, 0, W, H);
+    Object.assign(state, { photo, W, H, data: pc.getImageData(0, 0, W, H), lm: null, seg: null });
+    show("studio"); renderChips();
+    const out = $("#out"); out.width = W; out.height = H; out.getContext("2d").drawImage(photo, 0, 0); $("#holdBtn").hidden = true; $("#note").textContent = "";
+    busy("AI を準備しています…（初めてのときは約30MBを読み込みます）");
+    const ai = await loadAI();
+    busy("体の位置を探しています…");
+    await new Promise(r => setTimeout(r, 30));
+    const p = ai.pose.detect(photo); state.lm = p.landmarks?.[0] || null;
+    if (ai.seg) { const r = ai.seg.segment(photo); const m = r.categoryMask; if (m) { state.seg = { mask: m.getAsUint8Array().slice(), w: m.width, h: m.height }; m.close(); } r.close?.(); }
+    busy(""); render();
+  } catch (err) { console.warn(err); busy(""); toast("うまく読み込めませんでした（電波を確認してください）"); }
+  finally { setTimeout(() => URL.revokeObjectURL(url), 5000); }
+});
+document.addEventListener("click", async e => {
+  const el = e.target.closest("[data-pattern],[data-color],[data-act]"); if (!el) return;
+  if (el.dataset.pattern) { state.pattern = el.dataset.pattern; store("ki_pattern", state.pattern); renderChips(); render(); return; }
+  if (el.dataset.color) { state.color = el.dataset.color; store("ki_color", state.color); renderChips(); render(); return; }
+  const out = $("#out");
+  switch (el.dataset.act) {
+    case "back": history.back(); break;
+    case "save": out.toBlob(b => { if (!b) return; const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `kimono-${Date.now()}.jpg`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast("保存しました"); }, "image/jpeg", 0.92); break;
+    case "share": out.toBlob(async b => {
+      if (!b) return; const file = new File([b], "kimono.jpg", { type: "image/jpeg" });
+      if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: "きものフォト" }); } catch (err) {} }
+      else toast("この端末では送れません。「保存」してから送ってください");
+    }, "image/jpeg", 0.92); break;
+  }
+});
+// 長押し・ボタンを押している間は元の写真
+(() => {
+  const show = on => { if (!state.photo || !state.result) return; const c = $("#out").getContext("2d"); if (on) c.drawImage(state.photo, 0, 0); else render(); };
+  for (const el of [$("#out"), $("#holdBtn")]) {
+    el.addEventListener("pointerdown", e => { e.preventDefault(); show(true); });
+    for (const t of ["pointerup", "pointercancel", "pointerleave"]) el.addEventListener(t, () => show(false));
+    el.addEventListener("contextmenu", e => e.preventDefault());
+  }
+})();
+// オフラインでも開けるように
+if ("serviceWorker" in navigator && location.protocol === "https:") addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+</script>
