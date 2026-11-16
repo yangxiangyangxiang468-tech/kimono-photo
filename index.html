@@ -74,6 +74,25 @@ h1 em { font-style: normal; color: var(--shu); }
 .chip.on { border-color: var(--ink); box-shadow: 0 0 0 2px var(--gold); }
 .chip canvas { width: 54px; height: 40px; border-radius: 6px; display: block; }
 .dot { width: 34px; height: 34px; border-radius: 50%; border: 2px solid rgba(0,0,0,.15); }
+.seg { display: flex; gap: 8px; flex-wrap: wrap; }
+.seg .chip { padding: 8px 16px; font-size: 14px; }
+.btn:disabled { opacity: .45; cursor: default; }
+.panel.playing .no-play { display: none; }
+.game { border-color: var(--gold); }
+.items { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; }
+.item { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 8px; text-align: left; border: 1.5px solid var(--line); background: #fff; border-radius: 12px; padding: 8px 10px;
+  cursor: pointer; font-weight: 700; font-size: 14px; line-height: 1.35; touch-action: manipulation; }
+.item small { display: block; font-weight: 500; font-size: 11.5px; color: var(--muted); }
+.item .sw { width: 26px; height: 26px; border-radius: 6px; border: 1.5px solid rgba(0,0,0,.15); }
+.item.done { opacity: .4; cursor: default; }
+.item.hint { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
+.item.ng { animation: shake .35s; border-color: var(--shu); }
+@keyframes shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+@media (prefers-reduced-motion: reduce) { .item.ng { animation: none; } }
+.gstat { display: flex; gap: 14px; flex-wrap: wrap; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gstat b { color: var(--shu); font-size: 20px; }
+.gmsg { margin: 0; font-weight: 700; min-height: 1.7em; }
+.stars { font-size: 34px; color: var(--gold); letter-spacing: .1em; line-height: 1.2; }
 .toast { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: #fff; padding: 9px 16px; border-radius: 10px; z-index: 60; max-width: calc(100% - 32px); font-size: 14px; }
 </style>
 
@@ -90,6 +109,7 @@ h1 em { font-style: normal; color: var(--shu); }
       <div><b>1 撮る</b>正面を向いて立ち、上半身か全身が写るように撮ってください。肩と腰が見えるときれいに着せられます（横向きや歩いている写真は苦手です）。</div>
       <div><b>2 選ぶ</b>柄（麻の葉・青海波・桜・矢絣・市松）と色を選べます。写真を長押しすると、元の写真と比べられます。</div>
       <div><b>3 残す</b>「保存」で端末に、「送る」で友だちに。写真はこの端末の中だけで作り、どこにも送りません。</div>
+      <div><b>4 遊ぶ</b>「着付けゲーム」で、女の人・男の人に着物を正しい順番で着せてみよう。簡単・普通・難しいの3つのレベルがあります。</div>
     </div>
   </div>
 </section>
@@ -105,6 +125,29 @@ h1 em { font-style: normal; color: var(--shu); }
         <button class="btn hold" id="holdBtn" hidden>押している間は元の写真</button>
       </div>
       <div class="panel">
+        <div class="group no-play"><h3>着る人</h3><div class="seg" id="sexes"></div></div>
+        <div class="group game">
+          <h3>着付けゲーム</h3>
+          <div id="gameIdle" style="display:grid;gap:10px">
+            <p class="note">着物を正しい順番で着せよう。早く、まちがえずに着せるほど高い評価です。</p>
+            <div class="seg" id="levels"></div>
+            <p class="note" id="levelNote"></p>
+            <div class="btns"><button class="btn primary" data-act="gameStart" id="gameStartBtn">はじめる</button></div>
+            <p class="note" id="gameBest"></p>
+          </div>
+          <div id="gamePlay" style="display:grid;gap:10px" hidden>
+            <div class="gstat"><span>⏱ <b id="gTime">0.0</b>秒</span><span id="gStep"></span><span id="gMiss"></span></div>
+            <p class="gmsg" id="gMsg"></p>
+            <div class="items" id="gItems"></div>
+            <div class="btns"><button class="btn quiet" data-act="gameQuit">やめる</button></div>
+          </div>
+          <div id="gameEnd" style="display:grid;gap:8px" hidden>
+            <div class="stars" id="gStars"></div>
+            <p class="gmsg" id="gResult"></p>
+            <p class="note" id="gOrder"></p>
+            <div class="btns"><button class="btn primary" data-act="gameStart">もう一度</button><button class="btn" data-act="gameQuit">おわる</button></div>
+          </div>
+        </div>
         <div class="group"><h3>柄</h3><div class="chips" id="patterns"></div></div>
         <div class="group"><h3>色</h3><div class="chips" id="colors"></div></div>
         <div class="btns"><button class="btn primary" data-act="save">保存</button><button class="btn" data-act="share">送る</button></div>
@@ -131,6 +174,25 @@ const COLORS = [
   { id: "fuji", name: "藤", base: "#6b4f9c", accent: "#f3d9ea", obi: "#d9b25a", eri: "#ffffff" },
   { id: "sumi", name: "墨", base: "#26221f", accent: "#d5373f", obi: "#d9b25a", eri: "#ffffff" },
 ];
+// 着付けゲームの品物。order = 着せる正しい順番
+const ITEMS = {
+  hada: { name: "肌襦袢", desc: "いちばん下に着る肌着", why: "肌襦袢はいちばん最初に着る肌着です" },
+  juban: { name: "長襦袢", desc: "着物の下に着る白い着物", why: "長襦袢は着物の下に着ます" },
+  kimono: { name: "着物", desc: "上に着る柄の着物", why: "着物は長襦袢の上に着ます" },
+  date: { name: "伊達締め", desc: "着物を留める細い帯", why: "伊達締めは着物を着たあと、帯の前に締めます" },
+  obi: { name: "帯", desc: "おなかに巻く太い布", why: "帯は着物を着て、整えてから巻きます" },
+  obiage: { name: "帯揚げ", desc: "帯の上からのぞく布", why: "帯揚げは帯を巻いてから整えます" },
+  obijime: { name: "帯締め", desc: "帯の真ん中に結ぶひも", why: "帯締めは最後に結んで帯を留めます" },
+  kaku: { name: "角帯", desc: "腰に巻く細くかたい帯", why: "角帯は着物を着てから腰に巻きます" },
+  hakama: { name: "袴", desc: "帯の上からはく、ひだのある衣", why: "袴は角帯を締めてからはきます" },
+  haori: { name: "羽織", desc: "いちばん上にはおる上着", why: "羽織は帯（と袴）のあと、最後にはおります" },
+  himo: { name: "羽織紐", desc: "羽織の前を留めるひも", why: "羽織紐は羽織を着てから付けます" },
+};
+const ORDERS = {
+  f: { easy: ["juban", "kimono", "obi"], normal: ["juban", "kimono", "obi", "obiage", "obijime"], hard: ["hada", "juban", "kimono", "date", "obi", "obiage", "obijime"] },
+  m: { easy: ["juban", "kimono", "kaku"], normal: ["juban", "kimono", "kaku", "haori", "himo"], hard: ["hada", "juban", "kimono", "kaku", "hakama", "haori", "himo"] },
+};
+const WEAR = { f: ORDERS.f.normal, m: ["juban", "kimono", "kaku"] }; // 写真モードで着せる一式
 // 柄の 1 枚分（size × size）を描く。newCanvas(w, h) はキャンバスを作る関数（ブラウザでも node でも）
 function patternTile(newCanvas, id, size, base, accent) {
   const cv = newCanvas(size, size), c = cv.getContext("2d"), s = size;
@@ -200,6 +262,7 @@ function kimonoShape(lm, W, H) {
 // 着物を描いた層（写真と同じ大きさ、着物の所だけ色がある）を返す。
 // photo: 写真のキャンバス（ぼかした明るさを着物に写して、しわや影をなじませる）。
 // seg: { mask: 1 点ごとの種類, w, h }（0 = 背景、1 = 髪、2 = 肌、3 = 顔、4 = 服、5 = 小物）。着ている服と腕・脚をまるごと着物で覆い、顔・髪・手は手前に残す
+// opts: { pattern, color, sex: "f" | "m", wear: 着ている物の id の配列（着付けゲーム用。無ければ WEAR のふだんの一式）}
 function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
   const k = kimonoShape(lm, W, H); if (!k) return null;
   const col = COLORS.find(c => c.id === opts.color) || COLORS[0], layer = newCanvas(W, H), c = layer.getContext("2d");
@@ -208,7 +271,16 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
   const add = (a, b, f = 1) => ({ x: a.x + b.x * f, y: a.y + b.y * f }), seam = "rgba(0,0,0,.22)";
   const below = (p, from, dist = 0) => (p.x - from.x) * k.down.x + (p.y - from.y) * k.down.y > dist; // 首より下か
   const hands = k.sleeves.map(s => s.hand), hr = k.sw * 0.42;
-  // 1) 写真の服・腕・脚（首より下、手をのぞく）を着物の柄で覆う。マスクは小さく作って、なめらかに広げる
+  const male = opts.sex === "m", wear = opts.wear || (male ? WEAR.m : WEAR.f), has = id => wear.includes(id);
+  const outer = has("kimono") || has("juban"); if (!outer && !has("hada")) return null;
+  const fill = has("kimono") ? pat : has("juban") ? (male ? "#ece6dc" : "#f7eeea") : "#fbfaf7"; // 着物 > 長襦袢（無地）> 肌襦袢（白）
+  const tl = Math.hypot(k.hm.x - k.sm.x, k.hm.y - k.sm.y), at = t => add(k.sm, k.down, tl * t);
+  const quad = (a, b, wa, wb) => [add(a, k.side, -wa / 2), add(a, k.side, wa / 2), add(b, k.side, wb / 2), add(b, k.side, -wb / 2)];
+  const band = (from, to, w, f) => { const dx = to.x - from.x, dy = to.y - from.y, l = Math.hypot(dx, dy) || 1, nx = -dy / l * w / 2, ny = dx / l * w / 2;
+    poly(c, [{ x: from.x + nx, y: from.y + ny }, { x: to.x + nx, y: to.y + ny }, { x: to.x - nx, y: to.y - ny }, { x: from.x - nx, y: from.y - ny }], f); };
+  const stripes = (s, a, b, horiz) => { const t = newCanvas(s, s), x = t.getContext("2d"); x.fillStyle = a; x.fillRect(0, 0, s, s); x.fillStyle = b;
+    for (let i = 0; i < s; i += s / 4) horiz ? x.fillRect(0, i, s, s / 10) : x.fillRect(i, 0, s / 10, s); return c.createPattern(t, "repeat"); };
+  // 1) 写真の服・腕・脚（首より下、手をのぞく）を覆う。マスクは小さく作って、なめらかに広げる
   if (seg?.mask) {
     const m = newCanvas(seg.w, seg.h), mc = m.getContext("2d"), id = mc.createImageData(seg.w, seg.h);
     for (let y = 0; y < seg.h; y++) for (let x = 0; x < seg.w; x++) {
@@ -217,43 +289,75 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
     }
     mc.putImageData(id, 0, 0);
     const cover = newCanvas(W, H), cc = cover.getContext("2d"); cc.imageSmoothingEnabled = true; cc.drawImage(m, 0, 0, W, H);
-    cc.globalCompositeOperation = "source-in"; cc.fillStyle = pat; cc.fillRect(0, 0, W, H);
+    cc.globalCompositeOperation = "source-in"; cc.fillStyle = fill; cc.fillRect(0, 0, W, H);
     c.drawImage(cover, 0, 0);
   }
-  // 2) 着物の形：袖（振袖）は腕を包んで下へ長く垂らす。身ごろはまっすぐの筒
-  for (const s of k.sleeves) {
-    const [a, b, d] = s.top, aw = k.sw * 0.3;
-    const off = (p, q, w) => { const dx = q.x - p.x, dy = q.y - p.y, l = Math.hypot(dx, dy) || 1; return { x: -dy / l * w, y: dx / l * w }; };
-    c.lineJoin = "round"; c.lineCap = "round"; c.strokeStyle = pat; c.lineWidth = aw * 2; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.lineTo(d.x, d.y); c.stroke(); // 腕を包む
-    const bot = add(d, { x: 0, y: s.drop }), mid = add(b, { x: 0, y: s.drop * 0.9 });
-    c.beginPath(); c.moveTo(b.x, b.y); c.lineTo(d.x, d.y); c.lineTo(bot.x, bot.y - s.drop * 0.18); c.quadraticCurveTo(bot.x, bot.y, bot.x + (b.x - d.x > 0 ? 1 : -1) * s.drop * 0.18, bot.y); c.lineTo(mid.x, mid.y); c.closePath(); c.fillStyle = pat; c.fill(); // 垂れる袂
-    c.strokeStyle = seam; c.lineWidth = Math.max(1, k.sw * 0.012); c.beginPath(); c.moveTo(d.x, d.y + aw * 0.6); c.lineTo(bot.x, bot.y - s.drop * 0.2); c.stroke();
-    void off;
+  // 袖：肩 → ひじ → 手首の手前を上のふちにして、下へ垂らす（女の人は振袖で長く、男の人は短く）
+  const sleeves = (f, dropK, thick) => { for (const s of k.sleeves) {
+    const [a, b, d] = s.top, aw = k.sw * 0.3 * thick, drop = k.sw * dropK;
+    c.lineJoin = "round"; c.lineCap = "round"; c.strokeStyle = f; c.lineWidth = aw * 2; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.lineTo(d.x, d.y); c.stroke(); // 腕を包む
+    const bot = add(d, { x: 0, y: drop }), mid = add(b, { x: 0, y: drop * 0.9 });
+    c.beginPath(); c.moveTo(b.x, b.y); c.lineTo(d.x, d.y); c.lineTo(bot.x, bot.y - drop * 0.18); c.quadraticCurveTo(bot.x, bot.y, bot.x + (b.x - d.x > 0 ? 1 : -1) * drop * 0.18, bot.y); c.lineTo(mid.x, mid.y); c.closePath(); c.fillStyle = f; c.fill(); // 袂
+    c.strokeStyle = seam; c.lineWidth = Math.max(1, k.sw * 0.012); c.beginPath(); c.moveTo(d.x, d.y + aw * 0.6); c.lineTo(bot.x, bot.y - drop * 0.2); c.stroke();
+  } };
+  if (!outer) poly(c, k.body, fill); // 肌襦袢だけ
+  else {
+    // 2) 着物（または長襦袢）の形：袖と、まっすぐの筒の身ごろ
+    sleeves(fill, male ? 0.45 : 0.95, 1);
+    poly(c, k.body, fill);
+    c.strokeStyle = seam; c.lineWidth = Math.max(1, k.sw * 0.012);
+    for (const s of k.sleeves) { c.beginPath(); c.moveTo(s.top[0].x, s.top[0].y); c.lineTo(s.top[0].x + k.down.x * k.sw * 0.5, s.top[0].y + k.down.y * k.sw * 0.5); c.stroke(); } // 袖付け
+    c.beginPath(); c.moveTo(k.obiBot.x, k.obiBot.y); c.lineTo(k.obiBot.x + k.down.x * (k.hemY - k.obiBot.y), Math.min(H, k.hemY)); c.stroke(); // おくみ線
+    // 3) 衿元：首まわりは写真を見せて、衿を重ねる。右前（着る人の左の衿が上 ＝ 正面からは「y」の形）
+    c.save(); c.globalCompositeOperation = "destination-out";
+    poly(c, [add(k.nR, k.down, -k.sw * 0.6), add(k.nL, k.down, -k.sw * 0.6), add(k.nL, k.side, k.sw * 0.02), add(k.vb, k.down, -k.sw * 0.25), add(k.nR, k.side, -k.sw * 0.02)], "#000"); c.restore();
+    const ew = k.sw * 0.11, obiL = add(k.obiTop, k.side, -k.hipW * 0.42), eri = male ? "#d8d2c8" : col.eri;
+    band(k.nR, add(k.vb, k.side, -ew * 0.2), ew, eri); band(add(k.nR, k.side, ew * 0.25), add(k.vb, k.side, ew * 0.05), ew * 0.18, "rgba(0,0,0,.10)"); // 下になる衿（着る人の右）
+    band(k.nL, obiL, ew * 1.1, eri); band(add(k.nL, k.side, -ew * 0.45), add(obiL, k.side, -ew * 0.45), ew * 0.14, "rgba(0,0,0,.2)");      // 上になる衿（着る人の左）
   }
-  poly(c, k.body, pat);
-  c.strokeStyle = seam; c.lineWidth = Math.max(1, k.sw * 0.012);
-  for (const s of k.sleeves) { c.beginPath(); c.moveTo(s.top[0].x, s.top[0].y); c.lineTo(s.top[0].x + k.down.x * k.sw * 0.5, s.top[0].y + k.down.y * k.sw * 0.5); c.stroke(); } // 袖付け
-  c.beginPath(); c.moveTo(k.obiBot.x, k.obiBot.y); c.lineTo(k.obiBot.x + k.down.x * (k.hemY - k.obiBot.y), Math.min(H, k.hemY)); c.stroke(); // おくみ線
-  // 3) 衿元：首まわりは写真を見せて、白い衿を重ねる。右前（着る人の左の衿が上 ＝ 正面からは「y」の形）
-  c.save(); c.globalCompositeOperation = "destination-out";
-  poly(c, [add(k.nR, k.down, -k.sw * 0.6), add(k.nL, k.down, -k.sw * 0.6), add(k.nL, k.side, k.sw * 0.02), add(k.vb, k.down, -k.sw * 0.25), add(k.nR, k.side, -k.sw * 0.02)], "#000"); c.restore();
-  const band = (from, to, w, fill) => { const dx = to.x - from.x, dy = to.y - from.y, l = Math.hypot(dx, dy) || 1, nx = -dy / l * w / 2, ny = dx / l * w / 2;
-    poly(c, [{ x: from.x + nx, y: from.y + ny }, { x: to.x + nx, y: to.y + ny }, { x: to.x - nx, y: to.y - ny }, { x: from.x - nx, y: from.y - ny }], fill); };
-  const ew = k.sw * 0.11, obiL = add(k.obiTop, k.side, -k.hipW * 0.42);
-  band(k.nR, add(k.vb, k.side, -ew * 0.2), ew, col.eri); band(add(k.nR, k.side, ew * 0.25), add(k.vb, k.side, ew * 0.05), ew * 0.18, "rgba(0,0,0,.10)"); // 下になる衿（着る人の右）
-  band(k.nL, obiL, ew * 1.1, col.eri); band(add(k.nL, k.side, -ew * 0.45), add(obiL, k.side, -ew * 0.45), ew * 0.14, "rgba(0,0,0,.2)");      // 上になる衿（着る人の左）
-  // 4) 帯：胸の下から腰の上まで。帯揚げ（上の細い布）と帯締め（ひも）
-  const wAt = t => k.hipW * (1.02 + 0.06 * t), obi = [add(k.obiTop, k.side, -wAt(0) / 2), add(k.obiTop, k.side, wAt(0) / 2), add(k.obiBot, k.side, wAt(1) / 2), add(k.obiBot, k.side, -wAt(1) / 2)];
-  const on = Math.max(8, Math.round(k.sw * 0.2)), obiTile = newCanvas(on, on), ot = obiTile.getContext("2d");
-  ot.fillStyle = col.obi; ot.fillRect(0, 0, on, on); ot.fillStyle = "rgba(255,255,255,.28)"; ot.fillRect(0, on * 0.15, on, on * 0.08); ot.fillStyle = "rgba(0,0,0,.12)"; ot.fillRect(0, on * 0.6, on, on * 0.05);
-  ot.strokeStyle = "rgba(255,255,255,.35)"; ot.lineWidth = Math.max(1, on * 0.06); ot.beginPath(); ot.moveTo(on * 0.2, on * 0.45); ot.lineTo(on * 0.5, on * 0.3); ot.lineTo(on * 0.8, on * 0.45); ot.stroke();
-  poly(c, obi, c.createPattern(obiTile, "repeat"));
-  const oh = Math.hypot(k.obiBot.x - k.obiTop.x, k.obiBot.y - k.obiTop.y), cord = col.accent === "#d5373f" ? "#f2f2f2" : "#d5373f";
-  band(add(obi[0], k.down, oh * 0.05), add(obi[1], k.down, oh * 0.05), oh * 0.14, col.id === "momo" ? "#f7c8d4" : "#f0a7b8"); // 帯揚げ
-  const kn = add(k.obiTop, k.down, oh * 0.55);
-  band(add(kn, k.side, -wAt(0.5) / 2), add(kn, k.side, wAt(0.5) / 2), Math.max(2, oh * 0.08), cord); // 帯締め
-  c.fillStyle = cord; c.beginPath(); c.ellipse(kn.x, kn.y, oh * 0.1, oh * 0.07, 0, 0, 7); c.fill();
-  c.strokeStyle = "rgba(0,0,0,.25)"; c.lineWidth = Math.max(1, k.sw * 0.01); c.beginPath(); c.moveTo(obi[0].x, obi[0].y); c.lineTo(obi[1].x, obi[1].y); c.moveTo(obi[3].x, obi[3].y); c.lineTo(obi[2].x, obi[2].y); c.stroke();
+  const line2 = (a, b, w, f) => { c.strokeStyle = f; c.lineWidth = Math.max(1, w); c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); };
+  if (!male) {
+    // 4) 伊達締め・帯（胸の下から腰の上まで）・帯揚げ（上の細い布）・帯締め（ひも）
+    const wAt = t => k.hipW * (1.02 + 0.06 * t), obi = [add(k.obiTop, k.side, -wAt(0) / 2), add(k.obiTop, k.side, wAt(0) / 2), add(k.obiBot, k.side, wAt(1) / 2), add(k.obiBot, k.side, -wAt(1) / 2)];
+    const oh = Math.hypot(k.obiBot.x - k.obiTop.x, k.obiBot.y - k.obiTop.y), mid = add(k.obiTop, k.down, oh * 0.5);
+    if (has("date")) band(add(mid, k.side, -wAt(0.5) / 2), add(mid, k.side, wAt(0.5) / 2), oh * 0.3, "#e6d8e6");
+    if (has("obi")) {
+      const on = Math.max(8, Math.round(k.sw * 0.2)), obiTile = newCanvas(on, on), ot = obiTile.getContext("2d");
+      ot.fillStyle = col.obi; ot.fillRect(0, 0, on, on); ot.fillStyle = "rgba(255,255,255,.28)"; ot.fillRect(0, on * 0.15, on, on * 0.08); ot.fillStyle = "rgba(0,0,0,.12)"; ot.fillRect(0, on * 0.6, on, on * 0.05);
+      ot.strokeStyle = "rgba(255,255,255,.35)"; ot.lineWidth = Math.max(1, on * 0.06); ot.beginPath(); ot.moveTo(on * 0.2, on * 0.45); ot.lineTo(on * 0.5, on * 0.3); ot.lineTo(on * 0.8, on * 0.45); ot.stroke();
+      poly(c, obi, c.createPattern(obiTile, "repeat"));
+      line2(obi[0], obi[1], k.sw * 0.01, "rgba(0,0,0,.25)"); line2(obi[3], obi[2], k.sw * 0.01, "rgba(0,0,0,.25)");
+    }
+    if (has("obiage")) band(add(obi[0], k.down, oh * 0.05), add(obi[1], k.down, oh * 0.05), oh * 0.14, col.id === "momo" ? "#f7c8d4" : "#f0a7b8");
+    if (has("obijime")) { const cord = col.accent === "#d5373f" ? "#f2f2f2" : "#d5373f", kn = add(k.obiTop, k.down, oh * 0.55);
+      band(add(kn, k.side, -wAt(0.5) / 2), add(kn, k.side, wAt(0.5) / 2), Math.max(2, oh * 0.08), cord);
+      c.fillStyle = cord; c.beginPath(); c.ellipse(kn.x, kn.y, oh * 0.1, oh * 0.07, 0, 0, 7); c.fill(); }
+  } else {
+    // 4) 男の人：角帯（腰の細い帯）・袴・羽織（上着）・羽織紐
+    const kt = at(0.84), kb = at(1.02), kw = k.hipW * 1.06;
+    if (has("kaku")) { poly(c, quad(kt, kb, kw, kw), "#3b3230"); const km = add(kt, k.down, tl * 0.09); band(add(km, k.side, -kw / 2), add(km, k.side, kw / 2), tl * 0.025, col.obi); }
+    const hemC = { x: k.hm.x + k.down.x * (Math.min(k.hemY, H + 2) - k.hm.y), y: Math.min(k.hemY, H + 2) };
+    if (has("hakama")) {
+      const ht = at(0.93), hk = quad(ht, hemC, k.hipW * 1.1, k.hipW * 1.75);
+      poly(c, hk, stripes(Math.max(8, Math.round(k.sw * 0.16)), "#5f5b58", "#2c2a29", false));
+      for (const t of [-0.35, -0.12, 0.12, 0.35]) line2(add(ht, k.side, k.hipW * 1.1 * t), add(hemC, k.side, k.hipW * 1.75 * t), k.sw * 0.012, "rgba(0,0,0,.35)"); // ひだ
+      line2(hk[0], hk[1], k.sw * 0.03, "#2c2a29");
+    }
+    const chest = at(0.45), g1 = k.sw * 0.07, g2 = k.sw * 0.2;
+    if (has("haori")) {
+      const hc = "#1f1b1a", hh = at(1.85), hy = Math.min(hh.y, H + 2), hb = { x: hh.x + (hy - hh.y) * k.down.x / (k.down.y || 1), y: hy };
+      sleeves(hc, 0.6, 1.12);
+      for (const sgn of [1, -1]) {
+        const S = sgn > 0 ? k.Ls : k.Rs, N = sgn > 0 ? k.nL : k.nR;
+        poly(c, [add(add(S, k.side, sgn * k.sw * 0.12), k.down, -k.sw * 0.03), N, add(chest, k.side, sgn * g1), add(hb, k.side, sgn * g2), add(hb, k.side, sgn * k.hipW * 0.66)], hc);
+        band(N, add(hb, k.side, sgn * g2 * 1.15), k.sw * 0.1, "#2e2927"); // 羽織の衿
+        c.fillStyle = "#f4f1ea"; c.beginPath(); c.arc(...Object.values(add(add(S, k.down, k.sw * 0.35), k.side, -sgn * k.sw * 0.05)), k.sw * 0.04, 0, 7); c.fill(); // 家紋の白い丸
+      }
+    }
+    if (has("himo")) { const kn = chest; band(add(kn, k.side, -g1 * 1.6), add(kn, k.side, g1 * 1.6), k.sw * 0.035, "#f4f1ea");
+      c.fillStyle = "#f4f1ea"; c.beginPath(); c.ellipse(kn.x, kn.y, k.sw * 0.05, k.sw * 0.05, 0, 0, 7); c.fill();
+      c.beginPath(); c.ellipse(kn.x, kn.y + k.sw * 0.12, k.sw * 0.035, k.sw * 0.08, 0, 0, 7); c.fill(); } // 房
+  }
   // 5) 写真のぼかした明るさを写す（大きな影と光だけ。元の服のしま模様などは写さない）
   if (photo) {
     const sw2 = Math.max(8, Math.round(W / 24)), sh2 = Math.max(8, Math.round(H / 24)), small = newCanvas(sw2, sh2), sc = small.getContext("2d");
@@ -287,7 +391,7 @@ let toastTimer;
 function toast(msg) { const el = $("#toast"); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.hidden = true, 2600); }
 function store(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 function load(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
-function show(name) { document.querySelectorAll(".screen").forEach(s => s.hidden = s.id !== name); window.scrollTo(0, 0); if (name !== "home" && !history.state?.k) history.pushState({ k: 1 }, ""); }
+function show(name) { if (name === "home") stopGame(); document.querySelectorAll(".screen").forEach(s => s.hidden = s.id !== name); window.scrollTo(0, 0); if (name !== "home" && !history.state?.k) history.pushState({ k: 1 }, ""); }
 addEventListener("popstate", () => { if (!$("#studio").hidden) show("home"); });
 
 // 体の位置と、髪・顔・肌の場所を見つける AI（Google MediaPipe。端末の中で動く。初めてのときに約30MBを読み込む）
@@ -307,20 +411,91 @@ function loadAI() {
   return aiLoading;
 }
 
-const state = { photo: null, W: 0, H: 0, data: null, lm: null, seg: null, pattern: load("ki_pattern", "asanoha"), color: load("ki_color", "shu"), result: null };
+const state = { photo: null, W: 0, H: 0, data: null, lm: null, seg: null, pattern: load("ki_pattern", "asanoha"), color: load("ki_color", "shu"), result: null,
+  sex: load("ki_sex", "f"), level: load("ki_level", "normal"), found: false, game: null };
+const SEXES = [{ id: "f", name: "女の人" }, { id: "m", name: "男の人" }];
+const LEVELS = [
+  { id: "easy", name: "簡単", note: "3つの品物。まちがえると次の品物を教えてくれます。" },
+  { id: "normal", name: "普通", note: "5つの品物。まちがえると理由が出て、+3秒。" },
+  { id: "hard", name: "難しい", note: "7つの品物。説明なし、まちがえると+5秒。" },
+];
+const PENALTY = { easy: 0, normal: 3, hard: 5 };
 function busy(text) { $("#busy").hidden = !text; if (text) $("#busyText").textContent = text; }
 function render() {
   const out = $("#out"), { W, H } = state; if (!W) return;
   out.width = W; out.height = H; const c = out.getContext("2d"); c.drawImage(state.photo, 0, 0);
-  const layer = drawKimono(newCanvas, W, H, state.lm, { pattern: state.pattern, color: state.color }, state.photo, state.seg);
+  state.found = !!kimonoShape(state.lm, W, H);
+  const layer = state.found ? drawKimono(newCanvas, W, H, state.lm, { pattern: state.pattern, color: state.color, sex: state.sex, wear: state.game?.worn }, state.photo, state.seg) : null;
   state.result = !!layer; $("#holdBtn").hidden = !layer;
   if (layer) c.drawImage(layer, 0, 0);
-  $("#note").textContent = layer ? "写真を長押し（または左下のボタン）で、元の写真と比べられます。" : "人が見つかりませんでした。正面を向いて、肩と腰が写るように撮ってみてください。";
+  $("#note").textContent = !state.found ? (state.lm !== undefined ? "人が見つかりませんでした。正面を向いて、肩と腰が写るように撮ってみてください。" : "")
+    : layer ? "写真を長押し（または左下のボタン）で、元の写真と比べられます。" : "";
+  renderGame();
+}
+// ---------- 着付けゲーム ----------
+let gameTimer;
+const swatch = id => { const col = COLORS.find(c => c.id === state.color) || COLORS[0];
+  return { hada: "#fbfaf7", juban: state.sex === "m" ? "#ece6dc" : "#f7eeea", kimono: col.base, date: "#e6d8e6", obi: col.obi, obiage: "#f0a7b8", obijime: "#d5373f", kaku: "#3b3230", hakama: "repeating-linear-gradient(90deg,#5f5b58 0 4px,#2c2a29 4px 5px)", haori: "#1f1b1a", himo: "#f4f1ea" }[id]; };
+const bestKey = () => `ki_best_${state.sex}_${state.level}`;
+const gameTime = g => (performance.now() - g.start) / 1000 + g.pen;
+function renderGame() {
+  const g = state.game;
+  $("#gameIdle").hidden = !!g; $("#gamePlay").hidden = !g || g.done; $("#gameEnd").hidden = !g || !g.done;
+  $(".panel").classList.toggle("playing", !!g);
+  $("#levels").innerHTML = LEVELS.map(l => `<button class="chip ${l.id === state.level ? "on" : ""}" data-level="${l.id}">${l.name}</button>`).join("");
+  $("#levelNote").textContent = LEVELS.find(l => l.id === state.level).note;
+  $("#gameStartBtn").disabled = !state.found;
+  const best = load(bestKey(), null);
+  $("#gameBest").textContent = !state.found ? "人が見つかった写真で遊べます。" : best ? `いちばん速い記録（${SEXES.find(x => x.id === state.sex).name}・${LEVELS.find(l => l.id === state.level).name}）：${best.toFixed(1)}秒` : "";
+  if (!g || g.done) return;
+  $("#gStep").textContent = `${g.worn.length} / ${g.order.length}`;
+  $("#gMiss").textContent = `まちがい ${g.miss}`;
+  $("#gItems").innerHTML = g.cards.map(id => { const done = g.worn.includes(id);
+    return `<button class="item ${done ? "done" : ""} ${g.hint === id ? "hint" : ""}" data-item="${id}" ${done ? "disabled" : ""}><span class="sw" style="background:${swatch(id)}"></span>`
+      + `<span>${done ? "✓ " : ""}${ITEMS[id].name}${g.level !== "hard" ? `<small>${ITEMS[id].desc}</small>` : ""}</span></button>`; }).join("");
+}
+function startGame() {
+  if (!state.found) return;
+  const order = ORDERS[state.sex][state.level]; let cards;
+  do cards = [...order].sort(() => Math.random() - 0.5); while (cards.join() === order.join());
+  clearInterval(gameTimer);
+  state.game = { order, cards, worn: [], miss: 0, pen: 0, level: state.level, start: performance.now(), done: false, hint: null };
+  $("#gMsg").textContent = "着せる順番に、品物を選んでください"; $("#gTime").textContent = "0.0";
+  gameTimer = setInterval(() => { if (state.game && !state.game.done) $("#gTime").textContent = gameTime(state.game).toFixed(1); }, 100);
+  render();
+  $(".photo").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function stopGame() { clearInterval(gameTimer); if (state.game) { state.game = null; if (state.W) render(); } }
+function tapItem(id) {
+  const g = state.game; if (!g || g.done || g.worn.includes(id)) return;
+  const need = g.order[g.worn.length];
+  if (id === need) {
+    g.worn.push(id); g.hint = null; $("#gMsg").textContent = `◯ ${ITEMS[id].name}を着せました`;
+    if (g.worn.length === g.order.length) return finishGame();
+    render(); return;
+  }
+  g.miss++; g.pen += PENALTY[g.level];
+  if (g.level === "easy") g.hint = need;
+  $("#gMsg").textContent = g.level === "hard" ? "✕ ちがいます（+5秒）" : `✕ ${ITEMS[id].why}` + (g.level === "easy" ? `。次は「${ITEMS[need].name}」です` : "（+3秒）");
+  navigator.vibrate?.(80);
+  renderGame(); document.querySelector(`[data-item="${id}"]`)?.classList.add("ng");
+}
+function finishGame() {
+  const g = state.game; g.done = true; clearInterval(gameTimer);
+  const t = gameTime(g), per = t / g.order.length;
+  const stars = g.miss === 0 && per < 3 ? 3 : g.miss <= 1 && per < 6 ? 2 : 1;
+  const best = load(bestKey(), null), record = !best || t < best; if (record) store(bestKey(), t);
+  $("#gStars").textContent = "★".repeat(stars) + "☆".repeat(3 - stars);
+  $("#gResult").textContent = [, "もう少し！順番を覚えてもう一度", "上手に着せられました！", "お見事！着付け名人です"][stars]
+    + `　${t.toFixed(1)}秒（まちがい ${g.miss}回${g.pen ? `・+${g.pen}秒` : ""}）` + (record ? "　🎉 新記録" : "");
+  $("#gOrder").textContent = "正しい順番：" + g.order.map(id => ITEMS[id].name).join(" → ") + "。「保存」で写真を残せます。";
+  render();
 }
 function renderChips() {
   const col = COLORS.find(c => c.id === state.color) || COLORS[0];
   $("#patterns").innerHTML = PATTERNS.map(p => `<button class="chip ${p.id === state.pattern ? "on" : ""}" data-pattern="${p.id}"><canvas width="108" height="80"></canvas>${p.name}</button>`).join("");
   document.querySelectorAll("#patterns canvas").forEach((cv, i) => { const x = cv.getContext("2d"); x.fillStyle = x.createPattern(patternTile(newCanvas, PATTERNS[i].id, 40, col.base, col.accent), "repeat"); x.fillRect(0, 0, cv.width, cv.height); });
+  $("#sexes").innerHTML = SEXES.map(x => `<button class="chip ${x.id === state.sex ? "on" : ""}" data-sex="${x.id}">${x.name}</button>`).join("");
   $("#colors").innerHTML = COLORS.map(c => `<button class="chip ${c.id === state.color ? "on" : ""}" data-color="${c.id}"><span class="dot" style="background:${c.base}"></span>${c.name}</button>`).join("");
 }
 $("#photoIn").addEventListener("change", async e => {
@@ -330,9 +505,9 @@ $("#photoIn").addEventListener("change", async e => {
     const im = await new Promise((ok, ng) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ng; i.src = url; });
     const k = Math.min(1, 1280 / Math.max(im.naturalWidth, im.naturalHeight)), W = Math.round(im.naturalWidth * k), H = Math.round(im.naturalHeight * k);
     const photo = newCanvas(W, H), pc = photo.getContext("2d", { willReadFrequently: true }); pc.drawImage(im, 0, 0, W, H);
-    Object.assign(state, { photo, W, H, data: pc.getImageData(0, 0, W, H), lm: null, seg: null });
+    stopGame(); Object.assign(state, { photo, W, H, data: pc.getImageData(0, 0, W, H), lm: undefined, seg: null, found: false }); // lm: undefined = まだ探していない
     show("studio"); renderChips();
-    const out = $("#out"); out.width = W; out.height = H; out.getContext("2d").drawImage(photo, 0, 0); $("#holdBtn").hidden = true; $("#note").textContent = "";
+    const out = $("#out"); out.width = W; out.height = H; out.getContext("2d").drawImage(photo, 0, 0); $("#holdBtn").hidden = true; $("#note").textContent = ""; renderGame();
     busy("AI を準備しています…（初めてのときは約30MBを読み込みます）");
     const ai = await loadAI();
     busy("体の位置を探しています…");
@@ -344,12 +519,17 @@ $("#photoIn").addEventListener("change", async e => {
   finally { setTimeout(() => URL.revokeObjectURL(url), 5000); }
 });
 document.addEventListener("click", async e => {
-  const el = e.target.closest("[data-pattern],[data-color],[data-act]"); if (!el) return;
+  const el = e.target.closest("[data-pattern],[data-color],[data-act],[data-sex],[data-level],[data-item]"); if (!el) return;
+  if (el.dataset.item) { tapItem(el.dataset.item); return; }
+  if (el.dataset.sex) { state.sex = el.dataset.sex; store("ki_sex", state.sex); renderChips(); render(); return; }
+  if (el.dataset.level) { state.level = el.dataset.level; store("ki_level", state.level); renderGame(); return; }
   if (el.dataset.pattern) { state.pattern = el.dataset.pattern; store("ki_pattern", state.pattern); renderChips(); render(); return; }
   if (el.dataset.color) { state.color = el.dataset.color; store("ki_color", state.color); renderChips(); render(); return; }
   const out = $("#out");
   switch (el.dataset.act) {
     case "back": history.back(); break;
+    case "gameStart": startGame(); break;
+    case "gameQuit": stopGame(); break;
     case "save": out.toBlob(async b => {
       if (!b) return;
       // iPhone・iPad はダウンロードだと写真アプリに入らないので、共有シートの「画像を保存」から入れてもらう
