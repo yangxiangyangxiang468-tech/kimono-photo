@@ -116,7 +116,7 @@ div.item .sw { width: 18px; height: 18px; }
     <div class="samples">
       <div><b>1 撮る</b>正面を向いて立ち、上半身か全身が写るように撮ってください。肩と腰が見えるときれいに着せられます（横向きや歩いている写真は苦手です）。</div>
       <div><b>2 選ぶ</b>柄（麻の葉・青海波・桜・矢絣・市松）と色を選べます。写真を長押しすると、元の写真と比べられます。</div>
-      <div><b>3 残す</b>「保存」で端末に、「送る」で友だちに。写真はこの端末の中だけで作り、どこにも送りません。</div>
+      <div><b>3 残す</b>「保存」で端末に、「送る」で友だちに。写真はこの端末の中だけで作り、どこにも送りません（「AIでリアルに」を押したときだけ、写真を AI に送ります）。</div>
       <div><b>4 遊ぶ</b>「着付けゲーム」で、女の子・男の子のキャラに着物を正しい順番で着せてみよう。写真がなくても遊べます。レベルは簡単・普通・難しいの3つ。</div>
     </div>
   </div>
@@ -137,6 +137,8 @@ div.item .sw { width: 18px; height: 18px; }
         <div class="group"><h3>柄</h3><div class="chips" id="patterns"></div></div>
         <div class="group"><h3>色</h3><div class="chips" id="colors"></div></div>
         <div class="btns"><button class="btn primary" data-act="save">保存</button><button class="btn" data-act="share">送る</button></div>
+        <div class="group"><h3>✨ AIでリアルに</h3><p class="note">着物の所だけ、AI が写真らしい布に描き直します（10 秒ほど・無料・1 日に使える回数に限りあり）。押したときだけ写真を AI（Cloudflare）に送ります。送った写真は保存されません。</p>
+          <div class="btns"><button class="btn" data-act="ai" id="aiBtn" disabled>✨ AIで描き直す</button></div></div>
         <p class="note" id="note"></p>
       </div>
     </div>
@@ -550,11 +552,48 @@ function render() {
   const out = $("#out"), { W, H } = state; if (!W) return;
   out.width = W; out.height = H; const c = out.getContext("2d"); c.drawImage(state.photo, 0, 0);
   state.found = !!kimonoShape(state.lm, W, H);
-  const layer = state.found ? drawKimono(newCanvas, W, H, state.lm, { pattern: state.pattern, color: state.color, sex: state.sex }, state.photo, state.seg) : null;
-  state.result = !!layer; $("#holdBtn").hidden = !layer;
+  const key = `${state.pattern}/${state.color}/${state.sex}`; // 同じ柄・色なら描き直さない（長押しで比べるときなど）
+  if (state.layerKey !== key || state.layerPhoto !== state.photo) { state.layer = state.found ? drawKimono(newCanvas, W, H, state.lm, { pattern: state.pattern, color: state.color, sex: state.sex }, state.photo, state.seg) : null; state.layerKey = key; state.layerPhoto = state.photo; state.ai = null; }
+  const layer = state.layer;
+  state.result = !!layer; $("#holdBtn").hidden = !layer; $("#aiBtn").disabled = !layer || !!state.aiBusy;
   if (layer) { c.save(); c.shadowColor = "rgba(0,0,0,.28)"; c.shadowBlur = Math.round(Math.min(W, H) * 0.012); c.shadowOffsetY = Math.round(Math.min(W, H) * 0.004); c.drawImage(layer, 0, 0); c.restore(); } // 着物の落とす影
+  if (layer && state.ai) c.drawImage(state.ai.patch, state.ai.x, state.ai.y); // AI で描き直した着物
   $("#note").textContent = !state.found ? (state.lm !== undefined ? "人が見つかりませんでした。正面を向いて、肩と腰が写るように撮ってみてください。" : "")
-    : layer ? "写真を長押し（または左下のボタン）で、元の写真と比べられます。" : "";
+    : state.ai ? "AI で描き直しました。柄や色を変えると、元の絵にもどります。" : layer ? "写真を長押し（または左下のボタン）で、元の写真と比べられます。" : "";
+}
+// ---------- AIでリアルに ----------
+// アプリが描いた着物入りの写真と、着物の場所（マスク）を中継（Cloudflare Workers、ai-worker/）に送り、Stable Diffusion で着物の所だけ写真らしく描き直してもらう。
+// 返ってきた絵は、着物の場所だけ切り抜いて重ねる（顔・手・背景は元の写真のまま）
+const AI_URL = "https://kimono-ai.yangxiangyangxiang468.workers.dev/";
+async function aiRealize() {
+  const layer = state.layer, { W, H } = state; if (!layer || state.aiBusy) return;
+  if (!load("ki_ai_ok", false)) { if (!confirm("写真を外部の AI（Cloudflare）に送って、着物の所だけ写真らしく描き直します。送った写真は保存されません。よろしいですか？")) return; store("ki_ai_ok", true); }
+  // 着物のある範囲（少し余白をつける）
+  const a = layer.getContext("2d").getImageData(0, 0, W, H).data; let x0 = W, y0 = H, x1 = 0, y1 = 0;
+  for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (a[(y * W + x) * 4 + 3] > 20) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 <= x0) return;
+  const m = Math.round(Math.max(x1 - x0, y1 - y0) * 0.06); x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(W, x1 + m); y1 = Math.min(H, y1 + m);
+  const cw = x1 - x0, ch = y1 - y0, k = 640 / Math.max(cw, ch), r8 = v => Math.max(256, Math.min(768, Math.round(v / 8) * 8)), w = r8(cw * k), h = r8(ch * k);
+  const img = newCanvas(w, h); img.getContext("2d").drawImage($("#out"), x0, y0, cw, ch, 0, 0, w, h);
+  const mk = newCanvas(w, h), mc = mk.getContext("2d"); mc.fillStyle = "#000"; mc.fillRect(0, 0, w, h);
+  const lay = newCanvas(w, h); lay.getContext("2d").drawImage(layer, x0, y0, cw, ch, 0, 0, w, h); mc.drawImage(lay, 0, 0); mc.globalCompositeOperation = "source-atop"; mc.fillStyle = "#fff"; mc.fillRect(0, 0, w, h);
+  const blob = cv => new Promise(ok => cv.toBlob(ok, "image/png"));
+  const form = new FormData(); form.append("image", await blob(img), "image.png"); form.append("mask", await blob(mk), "mask.png");
+  for (const [kk, v] of Object.entries({ width: w, height: h, pattern: state.pattern, color: state.color, sex: state.sex, strength: 0.45 })) form.append(kk, String(v));
+  state.aiBusy = true; $("#aiBtn").disabled = true; busy("AI が着物を描き直しています…（10 秒ほど）");
+  try {
+    const res = await fetch(AI_URL, { method: "POST", body: form });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(res.status === 429 ? "limit" : e.error || res.status); }
+    const url = URL.createObjectURL(await res.blob()), im = await new Promise((ok, ng) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ng; i.src = url; });
+    // 着物の場所だけ切り抜く（ふちは内側へ少しぼかしてなじませる）
+    const patch = newCanvas(cw, ch), pc = patch.getContext("2d"); pc.imageSmoothingEnabled = true; pc.imageSmoothingQuality = "high"; pc.drawImage(im, 0, 0, cw, ch);
+    const feather = newCanvas(Math.max(4, Math.round(cw / 3)), Math.max(4, Math.round(ch / 3))); feather.getContext("2d").drawImage(layer, x0, y0, cw, ch, 0, 0, feather.width, feather.height);
+    const fm = newCanvas(cw, ch), fc = fm.getContext("2d"); fc.imageSmoothingEnabled = true; fc.drawImage(feather, 0, 0, cw, ch); fc.globalCompositeOperation = "destination-in"; fc.drawImage(layer, x0, y0, cw, ch, 0, 0, cw, ch);
+    pc.globalCompositeOperation = "destination-in"; pc.drawImage(fm, 0, 0); URL.revokeObjectURL(url);
+    if (state.layer === layer) { state.ai = { patch, x: x0, y: y0 }; } // 待っている間に柄や写真を変えていたら使わない
+    toast("AI で描き直しました");
+  } catch (e) { console.warn(e); toast(String(e.message) === "limit" ? "今日の無料の回数を使い切りました。明日また試してください" : "AI につながりませんでした。少し待ってもう一度"); }
+  finally { state.aiBusy = false; busy(""); render(); }
 }
 // ---------- 着付けゲーム ----------
 // 着せるキャラ（写真の代わりに絵で描く）。体の位置は MediaPipe Pose と同じ形で用意して、写真と同じ drawKimono で着物を描く
@@ -984,6 +1023,7 @@ document.addEventListener("click", async e => {
     case "turn": setBack(!turn.back); break;
     case "openGame": show("game"); renderChips(); drawGame(); renderGame(); break;
     case "gameStart": startGame(); break;
+    case "ai": aiRealize(); break;
     case "gameQuit": stopGame(); break;
     case "save": out.toBlob(async b => {
       if (!b) return;

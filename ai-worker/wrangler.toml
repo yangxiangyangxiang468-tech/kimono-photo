@@ -1,0 +1,9 @@
+# きものフォトの「AIでリアルに」用の中継（Cloudflare Workers）。AI の鍵はここに置かず、Workers AI の結びつけ（binding）で使う
+name = "kimono-ai"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+workers_dev = true
+preview_urls = false
+
+[ai]
+binding = "AI"

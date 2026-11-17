@@ -5,7 +5,7 @@
 公開URL: https://yangxiangyangxiang468-tech.github.io/kimono-photo/
 
 - `index.html` 1ファイルで動く（ビルド不要）。`manifest.webmanifest`・`sw.js`・`icons/` はホーム画面に追加してアプリとして使うためのもの
-- 写真は端末の中だけで処理し、どこにも送らない
+- 写真は端末の中だけで処理し、どこにも送らない（「AIでリアルに」を押したときだけ、写真を AI に送る）
 
 ## 使い方
 
@@ -51,3 +51,12 @@
   - 顔・髪・手は着物の手前に残す
 - 柄は `patternTile` で描く（画像ファイルは使わない）
 - 横向きや歩いている写真は苦手（脚の形に沿って柄がつく）
+
+## AIでリアルに（ai-worker/）
+
+写真モードの「✨ AIで描き直す」を押すと、アプリが描いた着物入りの写真と、着物の場所（マスク）を中継に送り、着物の所だけ AI に写真らしく描き直してもらう。返ってきた絵は着物の場所だけ切り抜いて重ねるので、顔・手・背景は元の写真のまま。
+
+- AI は Cloudflare Workers AI の Stable Diffusion 1.5（部分描き直し、`@cf/runwayml/stable-diffusion-v1-5-inpainting`）。無料の枠（1 日 10,000 Neurons）の中で動く
+- 中継は `ai-worker/`（Cloudflare Workers）。公開サイトからしか受け付けず、AI へのお願い文は中継の中で作る。送られた写真は保存しない
+- 中継を更新するとき：`cd ai-worker && npx wrangler deploy`（Cloudflare にログインしておく）
+
