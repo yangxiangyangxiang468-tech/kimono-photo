@@ -331,15 +331,22 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
     for (const [p, q] of [[a, b], [b, d]]) { const dx = q.x - p.x, dy = q.y - p.y, l = Math.hypot(dx, dy) || 1, nx = -dy / l * aw, ny = dx / l * aw;
       poly(c, [{ x: p.x + nx, y: p.y + ny }, { x: q.x + nx, y: q.y + ny }, { x: q.x - nx, y: q.y - ny }, { x: p.x - nx, y: p.y - ny }], f); }
     for (const p of [a, b, d]) { c.fillStyle = f; c.beginPath(); c.arc(p.x, p.y, aw, 0, 7); c.fill(); }
-    const bot = add(d, { x: 0, y: drop }), mid = add(b, { x: 0, y: drop * 0.9 });
-    c.beginPath(); c.moveTo(b.x, b.y); c.lineTo(d.x, d.y); c.lineTo(bot.x, bot.y - drop * 0.18); c.quadraticCurveTo(bot.x, bot.y, bot.x + (b.x - d.x > 0 ? 1 : -1) * drop * 0.18, bot.y); c.lineTo(mid.x, mid.y); c.closePath(); c.fillStyle = f; c.fill(); // 袂
-    c.strokeStyle = seam; c.lineWidth = Math.max(1, k.sw * 0.012); c.beginPath(); c.moveTo(d.x, d.y + aw * 0.6); c.lineTo(bot.x, bot.y - drop * 0.2); c.stroke();
+    // 袂：腕から下へ、幅のある布がまっすぐ垂れる（下の角は丸い）。体の側は身ごろの後ろにかくれる
+    const dirX = Math.sign(s.S.x - k.sm.x) || 1, xs = [a.x, b.x, d.x], outerX = dirX > 0 ? Math.max(...xs) + aw * 1.05 : Math.min(...xs) - aw * 1.05;
+    const armpit = s.S.y + k.sw * 0.45, low = Math.max(b.y, d.y), bottom = low + drop, wide = Math.max(k.sw * 0.5, Math.abs(outerX - s.S.x) + aw * 0.2), innerX = outerX - dirX * wide, r = Math.min(drop * 0.35, wide * 0.45);
+    // 上のふちは、脇 → ひじ → 手首の外側と腕に沿わせる（水平の角を作らない）
+    c.beginPath(); c.moveTo(innerX, armpit); c.lineTo(b.x - dirX * aw * 0.2, b.y); c.lineTo(outerX, d.y); c.lineTo(outerX, bottom - r); c.quadraticCurveTo(outerX, bottom, outerX - dirX * r, bottom);
+    c.lineTo(innerX + dirX * r * 0.4, bottom); c.quadraticCurveTo(innerX, bottom, innerX, bottom - r * 0.4); c.closePath(); c.fillStyle = f; c.fill();
+    c.strokeStyle = seam; c.lineWidth = Math.max(1, k.sw * 0.012); c.beginPath(); c.moveTo(outerX - dirX * aw * 0.2, low + aw * 0.5); c.lineTo(outerX - dirX * aw * 0.2, bottom - r * 0.6); c.stroke(); // 袖口のふち
   } };
   if (!outer) poly(c, k.body, fill); // 肌襦袢だけ
   else {
     // 2) 着物（または長襦袢）の形：袖と、まっすぐの筒の身ごろ
     sleeves(fill, male ? 0.45 : 0.95, 1);
-    poly(c, k.body, fill);
+    // 身ごろ：すその角を少し丸める
+    { const B = k.body, r = k.sw * 0.06; c.beginPath(); c.moveTo(B[0].x, B[0].y); c.lineTo(B[1].x, B[1].y); c.lineTo(B[2].x, B[2].y);
+      c.lineTo(B[3].x, B[3].y - r); c.quadraticCurveTo(B[3].x, B[3].y, B[3].x - r, B[3].y); c.lineTo(B[4].x + r, B[4].y); c.quadraticCurveTo(B[4].x, B[4].y, B[4].x, B[4].y - r);
+      c.lineTo(B[5].x, B[5].y); c.closePath(); c.fillStyle = fill; c.fill(); }
     c.strokeStyle = seam; c.lineWidth = Math.max(1, k.sw * 0.012);
     for (const s of k.sleeves) { c.beginPath(); c.moveTo(s.top[0].x, s.top[0].y); c.lineTo(s.top[0].x + k.down.x * k.sw * 0.5, s.top[0].y + k.down.y * k.sw * 0.5); c.stroke(); } // 袖付け
     const ew = k.sw * 0.11, eri = male ? "#d8d2c8" : col.eri;
@@ -475,11 +482,17 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
     const T = 64, tex = new Float32Array(T * T); { let sd = 11; const r = () => (sd = sd * 16807 % 2147483647) / 2147483647, raw = new Float32Array(T * T).map(r);
       for (let y = 0; y < T; y++) for (let x = 0; x < T; x++) { let v = 0; for (const [dx, dy, w] of [[0, 0, 4], [1, 0, 2], [-1, 0, 2], [0, 1, 1], [0, -1, 1]]) v += w * raw[((y + dy + T) % T) * T + (x + dx + T) % T]; tex[y * T + x] = 1 + (v / 10 - 0.5) * 0.16; } }
     const src = c.getImageData(0, 0, W, H), s = src.data, out = c.createImageData(W, H), d = out.data, { light, detail, gx, gy, tint } = M;
+    // すそのゆるい縦ひだ（帯より下で、下へいくほど少し強く）
+    const foldTop = male ? k.hm.y - k.sw * 0.1 : k.obiBot.y, foldW = k.sw * 0.34;
+    const drape = (x, y) => { if (y <= foldTop) return 1; const t = Math.min(1, (y - foldTop) / (k.sw * 0.8)), u = (x - k.hm.x) / foldW + 0.5 * Math.sin(y / (k.sw * 0.9));
+      return 1 + t * (0.07 * Math.sin(u * Math.PI * 2) + 0.03 * Math.sin(u * Math.PI * 4.3 + 1.3)); };
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x, p = i * 4; if (!s[p + 3]) continue;
       const sx = Math.max(0, Math.min(W - 1, x + gx[i])), sy = Math.max(0, Math.min(H - 1, y + gy[i])); let q = (sy * W + sx) * 4; if (!s[q + 3]) q = p; // しわに沿って柄をずらす
-      const lt = light[i] * detail[i], f = lt * (0.7 + 0.3 * Math.min(1, ea[p + 3] / 255 * 1.3)) * tex[(y % T) * T + x % T], sheen = Math.max(0, lt - 1.12) * 70; // 絹のつや
+      const lt = light[i] * detail[i] * drape(x, y), f = lt * (0.7 + 0.3 * Math.min(1, ea[p + 3] / 255 * 1.3)) * tex[(y % T) * T + x % T], sheen = Math.max(0, lt - 1.12) * 70; // 絹のつや
       d[p] = Math.min(255, s[q] * f * tint[0] + sheen); d[p + 1] = Math.min(255, s[q + 1] * f * tint[1] + sheen); d[p + 2] = Math.min(255, s[q + 2] * f * tint[2] + sheen);
-      d[p + 3] = s[p + 3]; }
+      // ふちの 1 ピクセルを少し透かして、写真になじませる
+      const edgePx = x === 0 || y === 0 || x === W - 1 || y === H - 1 || !s[p - 1] || !s[p + 7] || !s[p - W * 4 + 3] || !s[p + W * 4 + 3];
+      d[p + 3] = edgePx ? s[p + 3] * 0.55 : s[p + 3]; }
     c.putImageData(out, 0, 0);
   }
   // 6) 顔・髪・手は着物の手前に残す（なめらかに切り抜く）
