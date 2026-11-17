@@ -525,6 +525,32 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
     mc.putImageData(id, 0, 0);
     c.save(); c.globalCompositeOperation = "destination-out"; c.drawImage(sharpMask(m), 0, 0); c.restore();
   }
+  // 7) 首元に元の服（えり・タートルネック・フードなど）が写っている所は、顔の色から取った肌の色で塗って素肌の首にする。着物の下に入れる
+  if (photo && seg?.mask) {
+    const sm = newCanvas(seg.w, seg.h), sc = sm.getContext("2d"); sc.drawImage(photo, 0, 0, seg.w, seg.h); const pd = sc.getImageData(0, 0, seg.w, seg.h).data;
+    const at = (x, y) => ({ x: (x + 0.5) * W / seg.w, y: (y + 0.5) * H / seg.h }), lat = p => Math.abs((p.x - k.neck.x) * k.side.x + (p.y - k.neck.y) * k.side.y);
+    let r = 0, g = 0, b = 0, n = 0;
+    // 肌の色は首の肌から取る（無ければ顔から）
+    for (const want of [2, 3]) { if (n > 20) break; for (let y = 0; y < seg.h; y++) for (let x = 0; x < seg.w; x++) { const i = y * seg.w + x;
+      if (seg.mask[i] === want && (want === 3 || headZone(at(x, y)))) { r += pd[i * 4]; g += pd[i * 4 + 1]; b += pd[i * 4 + 2]; n++; } } }
+    if (n > 20) {
+      r /= n; g /= n; b /= n;
+      const m = newCanvas(seg.w, seg.h), mc = m.getContext("2d"), id = mc.createImageData(seg.w, seg.h); let any = false;
+      for (let y = 0; y < seg.h; y++) for (let x = 0; x < seg.w; x++) { const cls = seg.mask[y * seg.w + x], p = at(x, y);
+        if ((cls === 4 || cls === 5) && below(p, k.neck, -k.sw * 0.6) && !below(p, k.neck, k.sw * 0.9) && lat(p) < k.sw * 0.42) { id.data[(y * seg.w + x) * 4 + 3] = 255; any = true; } }
+      // 1 マスずつ広げて、服のふちの色が細く残らないようにする（顔や髪の上には広げない）
+      const grow = new Uint8Array(seg.w * seg.h);
+      for (let y = 1; y < seg.h - 1; y++) for (let x = 1; x < seg.w - 1; x++) { const i = y * seg.w + x, cls = seg.mask[i];
+        if (!id.data[i * 4 + 3] && cls !== 1 && cls !== 3 && (id.data[(i - 1) * 4 + 3] || id.data[(i + 1) * 4 + 3] || id.data[(i - seg.w) * 4 + 3] || id.data[(i + seg.w) * 4 + 3])) grow[i] = 1; }
+      for (let i = 0; i < grow.length; i++) if (grow[i]) id.data[i * 4 + 3] = 255;
+      if (any) {
+        mc.putImageData(id, 0, 0); const sk = sharpMask(m), skc = sk.getContext("2d"); skc.globalCompositeOperation = "source-in";
+        const gr = skc.createLinearGradient(0, k.neck.y - k.sw * 0.5, 0, k.neck.y + k.sw * 0.5), rgb = f => `rgb(${Math.round(r * f)},${Math.round(g * f)},${Math.round(b * f)})`;
+        gr.addColorStop(0, rgb(1)); gr.addColorStop(1, rgb(0.9)); skc.fillStyle = gr; skc.fillRect(0, 0, W, H); // 下（衿の近く）ほど少し影
+        c.save(); c.globalCompositeOperation = "destination-over"; c.drawImage(sk, 0, 0); c.restore();
+      }
+    }
+  }
   return layer;
 }
 // ==KIMONO END==
