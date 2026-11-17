@@ -80,6 +80,7 @@ h1 em { font-style: normal; color: var(--shu); }
 .stage { display: grid; place-items: center; background: radial-gradient(ellipse at 50% 95%, #e2d3c0 0 18%, transparent 19%), linear-gradient(#f3e9dc, #eadcca); }
 .photo.stage canvas { width: auto; max-width: 100%; max-height: min(52vh, 640px); }
 @media (min-width: 820px) { .photo.stage canvas { max-height: min(78vh, 640px); } }
+.turn { position: absolute; right: 10px; bottom: 10px; line-height: 1; padding: 8px 12px; font-size: 13px; background: rgba(255,250,243,.92); }
 .panel.playing .no-play { display: none; }
 .game { border-color: var(--gold); }
 .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; }
@@ -147,7 +148,7 @@ div.item .sw { width: 18px; height: 18px; }
   <div class="wrap">
     <div class="btns"><button class="btn quiet" data-act="back">← もどる</button></div>
     <div class="studio">
-      <div class="photo stage"><canvas id="gcv" width="360" height="640"></canvas></div>
+      <div class="photo stage"><canvas id="gcv" width="360" height="640"></canvas><button class="btn turn" id="turnBtn" data-act="turn">↻ 後ろを見る</button></div>
       <div class="panel" id="gPanel">
         <div class="group no-play"><h3>着せる人</h3><div class="seg" id="gSexes"></div></div>
         <div class="group game">
@@ -283,7 +284,7 @@ function kimonoShape(lm, W, H) {
 // 着物を描いた層（写真と同じ大きさ、着物の所だけ色がある）を返す。
 // photo: 写真のキャンバス（ぼかした明るさを着物に写して、しわや影をなじませる）。
 // seg: { mask: 1 点ごとの種類, w, h }（0 = 背景、1 = 髪、2 = 肌、3 = 顔、4 = 服、5 = 小物）。着ている服と腕・脚をまるごと着物で覆い、顔・髪・手は手前に残す
-// opts: { pattern, color, sex: "f" | "m", wear: 着ている物の id の配列（着付けゲーム用。無ければ WEAR のふだんの一式）}
+// opts: { pattern, color, sex: "f" | "m", back: 後ろ姿, wear: 着ている物の id の配列（着付けゲーム用。無ければ WEAR のふだんの一式）}
 function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
   const k = kimonoShape(lm, W, H); if (!k) return null;
   const col = COLORS.find(c => c.id === opts.color) || COLORS[0], layer = newCanvas(W, H), c = layer.getContext("2d");
@@ -291,8 +292,10 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
   const poly = (ctx, pts, fill) => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); };
   const add = (a, b, f = 1) => ({ x: a.x + b.x * f, y: a.y + b.y * f }), seam = "rgba(0,0,0,.22)";
   const below = (p, from, dist = 0) => (p.x - from.x) * k.down.x + (p.y - from.y) * k.down.y > dist; // 首より下か
+  // 首・頭のあたり：首の線より上で、しかも真ん中寄り（肩は首の線より上に写っても着物で覆う。傾いた写真で片方の肩が出ないように）
+  const headZone = p => !below(p, k.neck, k.sw * 0.12) && (Math.abs((p.x - k.neck.x) * k.side.x + (p.y - k.neck.y) * k.side.y) < k.sw * 0.3 || !below(p, k.neck, -k.sw * 0.35));
   const hands = k.sleeves.map(s => s.hand), hr = k.sw * 0.42;
-  const male = opts.sex === "m", wear = opts.wear || (male ? WEAR.m : WEAR.f), has = id => wear.includes(id);
+  const male = opts.sex === "m", back = !!opts.back, wear = opts.wear || (male ? WEAR.m : WEAR.f), has = id => wear.includes(id);
   const outer = has("kimono") || has("juban"); if (!outer && !has("hada")) return null;
   const fill = has("kimono") ? pat : has("juban") ? (male ? "#ece6dc" : "#f7eeea") : "#fbfaf7"; // 着物 > 長襦袢（無地）> 肌襦袢（白）
   const tl = Math.hypot(k.hm.x - k.sm.x, k.hm.y - k.sm.y), at = t => add(k.sm, k.down, tl * t);
@@ -306,7 +309,7 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
     const m = newCanvas(seg.w, seg.h), mc = m.getContext("2d"), id = mc.createImageData(seg.w, seg.h);
     for (let y = 0; y < seg.h; y++) for (let x = 0; x < seg.w; x++) {
       const cls = seg.mask[y * seg.w + x], p = { x: (x + 0.5) * W / seg.w, y: (y + 0.5) * H / seg.h };
-      if ((cls === 4 || cls === 5 || cls === 2) && below(p, k.neck, k.sw * 0.12) && p.y < k.hemY - k.sw * 0.13 && !hands.some(h => Math.hypot(p.x - h.x, p.y - h.y) < hr * (cls === 2 ? 1 : 0.55))) id.data[(y * seg.w + x) * 4 + 3] = 255;
+      if ((cls === 4 || cls === 5 || cls === 2) && !headZone(p) && p.y < k.hemY - k.sw * 0.13 && !hands.some(h => Math.hypot(p.x - h.x, p.y - h.y) < hr * (cls === 2 ? 1 : 0.55))) id.data[(y * seg.w + x) * 4 + 3] = 255;
     }
     mc.putImageData(id, 0, 0);
     const cover = newCanvas(W, H), cc = cover.getContext("2d"); cc.imageSmoothingEnabled = true; cc.drawImage(m, 0, 0, W, H);
@@ -328,54 +331,95 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
     poly(c, k.body, fill);
     c.strokeStyle = seam; c.lineWidth = Math.max(1, k.sw * 0.012);
     for (const s of k.sleeves) { c.beginPath(); c.moveTo(s.top[0].x, s.top[0].y); c.lineTo(s.top[0].x + k.down.x * k.sw * 0.5, s.top[0].y + k.down.y * k.sw * 0.5); c.stroke(); } // 袖付け
-    c.beginPath(); c.moveTo(k.obiBot.x, k.obiBot.y); c.lineTo(k.obiBot.x + k.down.x * (k.hemY - k.obiBot.y), Math.min(H, k.hemY)); c.stroke(); // おくみ線
-    // 3) 衿元：首まわりは写真を見せて、衿を重ねる。右前（着る人の左の衿が上 ＝ 正面からは「y」の形）
-    c.save(); c.globalCompositeOperation = "destination-out";
-    poly(c, [add(k.nR, k.down, -k.sw * 0.6), add(k.nL, k.down, -k.sw * 0.6), add(k.nL, k.side, k.sw * 0.02), add(k.vb, k.down, -k.sw * 0.25), add(k.nR, k.side, -k.sw * 0.02)], "#000"); c.restore();
-    const ew = k.sw * 0.11, obiL = add(k.obiTop, k.side, -k.hipW * 0.42), eri = male ? "#d8d2c8" : col.eri;
-    band(k.nR, add(k.vb, k.side, -ew * 0.2), ew, eri); band(add(k.nR, k.side, ew * 0.25), add(k.vb, k.side, ew * 0.05), ew * 0.18, "rgba(0,0,0,.10)"); // 下になる衿（着る人の右）
-    band(k.nL, obiL, ew * 1.1, eri); band(add(k.nL, k.side, -ew * 0.45), add(obiL, k.side, -ew * 0.45), ew * 0.14, "rgba(0,0,0,.2)");      // 上になる衿（着る人の左）
+    const ew = k.sw * 0.11, eri = male ? "#d8d2c8" : col.eri;
+    if (!back) {
+      c.beginPath(); c.moveTo(k.obiBot.x, k.obiBot.y); c.lineTo(k.obiBot.x + k.down.x * (k.hemY - k.obiBot.y), Math.min(H, k.hemY)); c.stroke(); // おくみ線
+      // 3) 衿元：首まわりは写真を見せて、衿を重ねる。右前（着る人の左の衿が上 ＝ 正面からは「y」の形）
+      c.save(); c.globalCompositeOperation = "destination-out";
+      poly(c, [add(k.nR, k.down, -k.sw * 0.6), add(k.nL, k.down, -k.sw * 0.6), add(k.nL, k.side, k.sw * 0.02), add(k.vb, k.down, -k.sw * 0.25), add(k.nR, k.side, -k.sw * 0.02)], "#000"); c.restore();
+      const obiL = add(k.obiTop, k.side, -k.hipW * 0.42);
+      band(k.nR, add(k.vb, k.side, -ew * 0.2), ew, eri); band(add(k.nR, k.side, ew * 0.25), add(k.vb, k.side, ew * 0.05), ew * 0.18, "rgba(0,0,0,.10)"); // 下になる衿（着る人の右）
+      band(k.nL, obiL, ew * 1.1, eri); band(add(k.nL, k.side, -ew * 0.45), add(obiL, k.side, -ew * 0.45), ew * 0.14, "rgba(0,0,0,.2)");      // 上になる衿（着る人の左）
+    } else {
+      // 後ろ姿：背縫いと、衣紋（女の人は首の後ろを少しあける）
+      c.beginPath(); c.moveTo(k.neck.x, k.neck.y); c.lineTo(k.hm.x + k.down.x * (k.hemY - k.hm.y), Math.min(H, k.hemY)); c.stroke(); // 背縫い
+      const dip = add(k.neck, k.down, k.sw * (male ? 0.1 : 0.24));
+      c.save(); c.globalCompositeOperation = "destination-out"; c.fillStyle = "#000"; c.beginPath();
+      c.moveTo(add(k.nR, k.down, -k.sw * 0.6).x, add(k.nR, k.down, -k.sw * 0.6).y); c.lineTo(add(k.nL, k.down, -k.sw * 0.6).x, add(k.nL, k.down, -k.sw * 0.6).y); c.lineTo(k.nL.x, k.nL.y);
+      c.quadraticCurveTo(dip.x, dip.y + k.sw * 0.12, k.nR.x, k.nR.y); c.closePath(); c.fill(); c.restore();
+      c.save(); c.strokeStyle = eri; c.lineWidth = ew; c.lineCap = "round"; c.beginPath(); c.moveTo(k.nR.x, k.nR.y); c.quadraticCurveTo(dip.x, dip.y + k.sw * 0.12, k.nL.x, k.nL.y); c.stroke();
+      c.strokeStyle = "rgba(0,0,0,.18)"; c.lineWidth = ew * 0.15; c.beginPath(); c.moveTo(k.nR.x - ew * 0.5, k.nR.y + ew * 0.4); c.quadraticCurveTo(dip.x, dip.y + k.sw * 0.12 + ew * 0.55, k.nL.x + ew * 0.5, k.nL.y + ew * 0.4); c.stroke(); c.restore();
+    }
   }
   const line2 = (a, b, w, f) => { c.strokeStyle = f; c.lineWidth = Math.max(1, w); c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); };
+  const tied = !has("nomusubi"); // 帯を結び終えたか（着付け体験で、巻いただけのときは "nomusubi" が入る）
   if (!male) {
-    // 4) 伊達締め・帯（胸の下から腰の上まで）・帯揚げ（上の細い布）・帯締め（ひも）
+    // 4) 伊達締め・帯（胸の下から腰の上まで）・帯揚げ（上の細い布）・帯締め（ひも）。後ろ姿ではお太鼓
     const wAt = t => k.hipW * (1.02 + 0.06 * t), obi = [add(k.obiTop, k.side, -wAt(0) / 2), add(k.obiTop, k.side, wAt(0) / 2), add(k.obiBot, k.side, wAt(1) / 2), add(k.obiBot, k.side, -wAt(1) / 2)];
     const oh = Math.hypot(k.obiBot.x - k.obiTop.x, k.obiBot.y - k.obiTop.y), mid = add(k.obiTop, k.down, oh * 0.5);
+    const cord = col.accent === "#d5373f" ? "#f2f2f2" : "#d5373f", age = col.id === "momo" ? "#f7c8d4" : "#f0a7b8";
     if (has("date")) band(add(mid, k.side, -wAt(0.5) / 2), add(mid, k.side, wAt(0.5) / 2), oh * 0.3, "#e6d8e6");
+    let obiPat = null;
     if (has("obi")) {
       const on = Math.max(8, Math.round(k.sw * 0.2)), obiTile = newCanvas(on, on), ot = obiTile.getContext("2d");
       ot.fillStyle = col.obi; ot.fillRect(0, 0, on, on); ot.fillStyle = "rgba(255,255,255,.28)"; ot.fillRect(0, on * 0.15, on, on * 0.08); ot.fillStyle = "rgba(0,0,0,.12)"; ot.fillRect(0, on * 0.6, on, on * 0.05);
       ot.strokeStyle = "rgba(255,255,255,.35)"; ot.lineWidth = Math.max(1, on * 0.06); ot.beginPath(); ot.moveTo(on * 0.2, on * 0.45); ot.lineTo(on * 0.5, on * 0.3); ot.lineTo(on * 0.8, on * 0.45); ot.stroke();
-      poly(c, obi, c.createPattern(obiTile, "repeat"));
+      obiPat = c.createPattern(obiTile, "repeat");
+      poly(c, obi, obiPat);
       line2(obi[0], obi[1], k.sw * 0.01, "rgba(0,0,0,.25)"); line2(obi[3], obi[2], k.sw * 0.01, "rgba(0,0,0,.25)");
     }
-    if (has("obiage")) band(add(obi[0], k.down, oh * 0.05), add(obi[1], k.down, oh * 0.05), oh * 0.14, col.id === "momo" ? "#f7c8d4" : "#f0a7b8");
-    if (has("obijime")) { const cord = col.accent === "#d5373f" ? "#f2f2f2" : "#d5373f", kn = add(k.obiTop, k.down, oh * 0.55);
-      band(add(kn, k.side, -wAt(0.5) / 2), add(kn, k.side, wAt(0.5) / 2), Math.max(2, oh * 0.08), cord);
-      c.fillStyle = cord; c.beginPath(); c.ellipse(kn.x, kn.y, oh * 0.1, oh * 0.07, 0, 0, 7); c.fill(); }
+    if (!back) {
+      if (has("obiage")) band(add(obi[0], k.down, oh * 0.05), add(obi[1], k.down, oh * 0.05), oh * 0.14, age);
+      if (has("obijime")) { const kn = add(k.obiTop, k.down, oh * 0.55);
+        band(add(kn, k.side, -wAt(0.5) / 2), add(kn, k.side, wAt(0.5) / 2), Math.max(2, oh * 0.08), cord);
+        c.fillStyle = cord; c.beginPath(); c.ellipse(kn.x, kn.y, oh * 0.1, oh * 0.07, 0, 0, 7); c.fill(); }
+    } else if (has("obi")) {
+      if (!tied) poly(c, quad(k.obiBot, add(k.obiBot, k.down, oh * 1.3), oh * 0.7, oh * 0.6), obiPat); // 巻いただけ：たれが下がっている
+      else { // お太鼓：背中の四角いふくらみ
+        const tw = k.hipW * 0.92, top = add(k.obiTop, k.down, -oh * 0.28), bot = add(k.obiBot, k.down, oh * 0.85);
+        c.save(); c.shadowColor = "rgba(0,0,0,.28)"; c.shadowBlur = k.sw * 0.08; c.shadowOffsetY = k.sw * 0.03; poly(c, quad(top, bot, tw, tw), obiPat); c.restore();
+        c.save(); c.strokeStyle = "rgba(0,0,0,.18)"; c.lineWidth = Math.max(1, k.sw * 0.012); c.beginPath(); const t1 = quad(top, bot, tw, tw);
+        c.moveTo(t1[0].x, t1[0].y); c.quadraticCurveTo(top.x, top.y - oh * 0.12, t1[1].x, t1[1].y); c.stroke(); c.restore();
+        const tare = add(bot, k.down, -oh * 0.32); line2(add(tare, k.side, -tw / 2), add(tare, k.side, tw / 2), k.sw * 0.012, "rgba(0,0,0,.22)"); // たれ先の線
+        if (has("obiage")) band(add(top, k.side, -tw * 0.42), add(top, k.side, tw * 0.42), oh * 0.12, age);
+        if (has("obijime")) band(add(add(k.obiTop, k.down, oh * 0.55), k.side, -wAt(0.5) / 2), add(add(k.obiTop, k.down, oh * 0.55), k.side, wAt(0.5) / 2), Math.max(2, oh * 0.08), cord);
+      }
+    }
   } else {
-    // 4) 男の人：角帯（腰の細い帯）・袴・羽織（上着）・羽織紐
+    // 4) 男の人：角帯（腰の細い帯）・袴・羽織（上着）・羽織紐。後ろ姿では貝の口・袴の腰板・羽織の背紋
     const kt = at(0.84), kb = at(1.02), kw = k.hipW * 1.06;
-    if (has("kaku")) { poly(c, quad(kt, kb, kw, kw), "#3b3230"); const km = add(kt, k.down, tl * 0.09); band(add(km, k.side, -kw / 2), add(km, k.side, kw / 2), tl * 0.025, col.obi); }
+    if (has("kaku")) { poly(c, quad(kt, kb, kw, kw), "#3b3230"); const km = add(kt, k.down, tl * 0.09); band(add(km, k.side, -kw / 2), add(km, k.side, kw / 2), tl * 0.025, col.obi);
+      if (back && tied) { const kc = add(kt, k.down, tl * 0.09); // 貝の口
+        poly(c, [add(add(kc, k.side, -kw * 0.16), k.down, -tl * 0.1), add(add(kc, k.side, kw * 0.04), k.down, -tl * 0.1), add(add(kc, k.side, kw * 0.12), k.down, tl * 0.1), add(add(kc, k.side, -kw * 0.08), k.down, tl * 0.1)], "#2a2220");
+        poly(c, [add(add(kc, k.side, -kw * 0.04), k.down, -tl * 0.08), add(add(kc, k.side, kw * 0.16), k.down, -tl * 0.08), add(add(kc, k.side, kw * 0.1), k.down, tl * 0.08), add(add(kc, k.side, -kw * 0.1), k.down, tl * 0.08)], "#4a3e3a");
+        band(add(kc, k.side, -kw * 0.1), add(kc, k.side, kw * 0.14), tl * 0.02, col.obi); }
+      else if (back) poly(c, quad(kb, add(kb, k.down, tl * 0.3), kw * 0.12, kw * 0.1), "#3b3230"); }
     const hemC = { x: k.hm.x + k.down.x * (Math.min(k.hemY, H + 2) - k.hm.y), y: Math.min(k.hemY, H + 2) };
     if (has("hakama")) {
-      const ht = at(0.93), hk = quad(ht, hemC, k.hipW * 1.1, k.hipW * 1.75);
-      poly(c, hk, stripes(Math.max(8, Math.round(k.sw * 0.16)), "#5f5b58", "#2c2a29", false));
-      for (const t of [-0.35, -0.12, 0.12, 0.35]) line2(add(ht, k.side, k.hipW * 1.1 * t), add(hemC, k.side, k.hipW * 1.75 * t), k.sw * 0.012, "rgba(0,0,0,.35)"); // ひだ
+      const ht = at(0.93), hk = quad(ht, hemC, k.hipW * 1.1, k.hipW * 1.75), hp = stripes(Math.max(8, Math.round(k.sw * 0.16)), "#5f5b58", "#2c2a29", false);
+      poly(c, hk, hp);
+      for (const t of back ? [-0.25, 0, 0.25] : [-0.35, -0.12, 0.12, 0.35]) line2(add(ht, k.side, k.hipW * 1.1 * t), add(hemC, k.side, k.hipW * 1.75 * t), k.sw * 0.012, "rgba(0,0,0,.35)"); // ひだ
       line2(hk[0], hk[1], k.sw * 0.03, "#2c2a29");
+      if (back) { const kt2 = at(0.78), kb2 = at(0.97); poly(c, quad(kt2, kb2, k.hipW * 0.6, k.hipW * 0.85), hp); line2(add(kt2, k.side, -k.hipW * 0.3), add(kt2, k.side, k.hipW * 0.3), k.sw * 0.03, "#2c2a29"); } // 腰板
     }
     const chest = at(0.45), g1 = k.sw * 0.07, g2 = k.sw * 0.2;
     if (has("haori")) {
       const hc = "#1f1b1a", hh = at(1.85), hy = Math.min(hh.y, H + 2), hb = { x: hh.x + (hy - hh.y) * k.down.x / (k.down.y || 1), y: hy };
       sleeves(hc, 0.6, 1.12);
-      for (const sgn of [1, -1]) {
+      if (back) { // 背中は 1 枚。首の後ろに衿、背中に紋
+        poly(c, [add(add(k.Rs, k.side, -k.sw * 0.12), k.down, -k.sw * 0.03), add(add(k.Ls, k.side, k.sw * 0.12), k.down, -k.sw * 0.03), add(hb, k.side, k.hipW * 0.66), add(hb, k.side, -k.hipW * 0.66)], hc);
+        c.save(); c.strokeStyle = "#2e2927"; c.lineWidth = k.sw * 0.1; c.lineCap = "round"; c.beginPath(); c.moveTo(k.nR.x, k.nR.y); c.quadraticCurveTo(k.neck.x, k.neck.y + k.sw * 0.2, k.nL.x, k.nL.y); c.stroke(); c.restore();
+        line2(add(k.neck, k.down, k.sw * 0.15), hb, k.sw * 0.012, "rgba(255,255,255,.12)");
+        const mon = add(k.neck, k.down, k.sw * 0.42); c.fillStyle = "#f4f1ea"; c.beginPath(); c.arc(mon.x, mon.y, k.sw * 0.07, 0, 7); c.fill();
+        c.fillStyle = hc; c.beginPath(); c.arc(mon.x, mon.y, k.sw * 0.035, 0, 7); c.fill();
+      } else for (const sgn of [1, -1]) {
         const S = sgn > 0 ? k.Ls : k.Rs, N = sgn > 0 ? k.nL : k.nR;
         poly(c, [add(add(S, k.side, sgn * k.sw * 0.12), k.down, -k.sw * 0.03), N, add(chest, k.side, sgn * g1), add(hb, k.side, sgn * g2), add(hb, k.side, sgn * k.hipW * 0.66)], hc);
         band(N, add(hb, k.side, sgn * g2 * 1.15), k.sw * 0.1, "#2e2927"); // 羽織の衿
         c.fillStyle = "#f4f1ea"; c.beginPath(); c.arc(...Object.values(add(add(S, k.down, k.sw * 0.35), k.side, -sgn * k.sw * 0.05)), k.sw * 0.04, 0, 7); c.fill(); // 家紋の白い丸
       }
     }
-    if (has("himo")) { const kn = chest; band(add(kn, k.side, -g1 * 1.6), add(kn, k.side, g1 * 1.6), k.sw * 0.035, "#f4f1ea");
+    if (has("himo") && !back) { const kn = chest; band(add(kn, k.side, -g1 * 1.6), add(kn, k.side, g1 * 1.6), k.sw * 0.035, "#f4f1ea");
       c.fillStyle = "#f4f1ea"; c.beginPath(); c.ellipse(kn.x, kn.y, k.sw * 0.05, k.sw * 0.05, 0, 0, 7); c.fill();
       c.beginPath(); c.ellipse(kn.x, kn.y + k.sw * 0.12, k.sw * 0.035, k.sw * 0.08, 0, 0, 7); c.fill(); } // 房
   }
@@ -396,7 +440,7 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
     const m = newCanvas(seg.w, seg.h), mc = m.getContext("2d"), id = mc.createImageData(seg.w, seg.h);
     for (let y = 0; y < seg.h; y++) for (let x = 0; x < seg.w; x++) {
       const cls = seg.mask[y * seg.w + x], p = { x: (x + 0.5) * W / seg.w, y: (y + 0.5) * H / seg.h };
-      if (cls === 1 || cls === 3 || (cls === 2 && (hands.some(h => Math.hypot(p.x - h.x, p.y - h.y) < hr) || !below(p, k.neck, k.sw * 0.12)))) id.data[(y * seg.w + x) * 4 + 3] = 255;
+      if (cls === 1 || cls === 3 || (cls === 2 && (hands.some(h => Math.hypot(p.x - h.x, p.y - h.y) < hr) || headZone(p)))) id.data[(y * seg.w + x) * 4 + 3] = 255;
     }
     mc.putImageData(id, 0, 0);
     c.save(); c.globalCompositeOperation = "destination-out"; c.imageSmoothingEnabled = true; c.drawImage(m, 0, 0, W, H); c.restore();
@@ -462,29 +506,64 @@ function charPose(sex) {
   return Array.from({ length: 33 }, (_, i) => pts[i] ? { x: pts[i][0], y: pts[i][1], visibility: 1 } : { x: 0.5, y: 0.18, visibility: 0 });
 }
 const SKIN = "#f6d7c3", SKIN2 = "#e9bda4", HAIR = "#2b211d";
-function drawChar(c, sex, wear, look) {
-  const W = CHAR_W, H = CHAR_H, lm = charPose(sex), P = i => ({ x: lm[i].x * W, y: lm[i].y * H }), m = sex === "m";
+// キャラを描く。view.back = 後ろ姿、view.casual = ふだんの洋服（ゲームを始める前）。着物を着るときは肌着姿から
+function drawChar(c, sex, wear, look, view = {}) {
+  const W = CHAR_W, H = CHAR_H, lm = charPose(sex), P = i => ({ x: lm[i].x * W, y: lm[i].y * H }), m = sex === "m", back = !!view.back;
   const line = (pts, w, col) => { c.strokeStyle = col; c.lineWidth = w; c.lineCap = "round"; c.lineJoin = "round"; c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)); c.stroke(); };
   const ell = (x, y, rx, ry, col, rot = 0) => { c.fillStyle = col; c.beginPath(); c.ellipse(x, y, rx, ry, rot, 0, 7); c.fill(); };
+  const shape = (pts, col) => { c.fillStyle = col; c.beginPath(); pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); c.fill(); };
   c.clearRect(0, 0, W, H);
-  // 足（白い足袋と草履）・脚・腕・胴（下着）・首
+  const Ls = P(11), Rs = P(12), Lh = P(23), Rh = P(24), Lk = P(25), Rk = P(26), cx = W / 2;
+  // 足もと：足袋と草履（ふだんはスニーカー）・脚・腕・首
   for (const [h, k, a] of [[23, 25, 27], [24, 26, 28]]) {
     line([P(h), P(k), P(a)], W * 0.07, SKIN);
-    const A = P(a), out = A.x > W / 2 ? 1 : -1;
-    ell(A.x + out * W * 0.012, A.y + H * 0.04, W * 0.045, H * 0.012, "#8b2d2a"); ell(A.x + out * W * 0.01, A.y + H * 0.025, W * 0.035, H * 0.022, "#fbfaf7");
+    const A = P(a), out = A.x > cx ? 1 : -1;
+    if (view.casual) { line([{ x: A.x, y: A.y - H * 0.03 }, { x: A.x, y: A.y }], W * 0.072, "#fbfaf7"); ell(A.x + out * W * 0.012, A.y + H * 0.024, W * 0.05, H * 0.02, m ? "#3a5a8c" : "#e58aa3"); ell(A.x + out * W * 0.012, A.y + H * 0.038, W * 0.052, H * 0.008, "#fbfaf7"); }
+    else { ell(A.x + out * W * 0.012, A.y + H * 0.04, W * 0.045, H * 0.012, "#8b2d2a"); ell(A.x + out * W * 0.01, A.y + H * 0.025, W * 0.035, H * 0.022, "#fbfaf7"); }
   }
   for (const [s, e, w] of [[11, 13, 15], [12, 14, 16]]) line([P(s), P(e), P(w)], W * 0.06, SKIN);
-  const Ls = P(11), Rs = P(12), Lh = P(23), Rh = P(24);
-  c.fillStyle = SKIN; c.fillRect(W * 0.465, H * 0.22, W * 0.07, H * 0.08);
-  c.fillStyle = "#e4e0da"; c.beginPath(); c.moveTo(Rs.x + W * 0.01, Rs.y - H * 0.005); c.lineTo(Ls.x - W * 0.01, Ls.y - H * 0.005); c.lineTo(Lh.x + W * 0.02, Lh.y + H * 0.06); c.lineTo(Rh.x - W * 0.02, Rh.y + H * 0.06); c.closePath(); c.fill();
-  c.fillStyle = SKIN; c.beginPath(); c.ellipse(W / 2, H * 0.29, W * 0.045, H * 0.012, 0, 0, Math.PI); c.fill(); // 首の付け根
+  c.fillStyle = SKIN; c.fillRect(W * 0.465, H * 0.22, W * 0.07, H * 0.085);
+  const torso = (y0, col) => shape([[Rs.x + W * 0.005, y0], [Ls.x - W * 0.005, y0], [Lh.x + W * 0.02, Lh.y + H * 0.03], [Rh.x - W * 0.02, Rh.y + H * 0.03]], col);
+  if (view.casual) {
+    // ふだんの洋服：女の子は Tシャツとフレアスカート、男の子は Tシャツとハーフパンツ
+    const tee = m ? "#9cc3e6" : "#fff7ea", tee2 = m ? "#7aa8d2" : "#f0a7b8";
+    for (const [S, E] of [[Ls, P(13)], [Rs, P(14)]]) line([S, { x: S.x + (E.x - S.x) * 0.55, y: S.y + (E.y - S.y) * 0.55 }], W * 0.095, tee); // 半そで
+    shape([[Rs.x - W * 0.01, Rs.y - H * 0.008], [Ls.x + W * 0.01, Ls.y - H * 0.008], [Lh.x + W * 0.035, Lh.y + H * 0.015], [Rh.x - W * 0.035, Rh.y + H * 0.015]], tee);
+    if (back) line([{ x: cx - W * 0.05, y: Rs.y - H * 0.006 }, { x: cx + W * 0.05, y: Rs.y - H * 0.006 }], W * 0.012, tee2);
+    else { c.strokeStyle = tee2; c.lineWidth = W * 0.012; c.beginPath(); c.arc(cx, Rs.y - H * 0.01, W * 0.045, 0.15 * Math.PI, 0.85 * Math.PI); c.stroke(); // えり
+      if (m) { line([{ x: cx - W * 0.06, y: H * 0.39 }, { x: cx + W * 0.06, y: H * 0.39 }], W * 0.018, tee2); } else ell(cx, H * 0.38, W * 0.03, W * 0.03, tee2); } // 胸の飾り
+    if (m) { shape([[Rh.x - W * 0.035, Rh.y - H * 0.01], [Lh.x + W * 0.035, Lh.y - H * 0.01], [Lk.x + W * 0.05, Lk.y - H * 0.04], [cx + W * 0.008, Lk.y - H * 0.04], [cx, Lh.y + H * 0.05], [cx - W * 0.008, Rk.y - H * 0.04], [Rk.x - W * 0.05, Rk.y - H * 0.04]], "#b49a74");
+      line([{ x: Rh.x - W * 0.03, y: Rh.y - H * 0.005 }, { x: Lh.x + W * 0.03, y: Lh.y - H * 0.005 }], W * 0.012, "#8f7856"); }
+    else { shape([[Rh.x - W * 0.035, Rh.y - H * 0.012], [Lh.x + W * 0.035, Lh.y - H * 0.012], [Lk.x + W * 0.095, Lk.y - H * 0.015], [Rk.x - W * 0.095, Rk.y - H * 0.015]], "#34497a");
+      for (const t of [-0.5, 0, 0.5]) line([{ x: cx + t * W * 0.06, y: Rh.y + H * 0.02 }, { x: cx + t * W * 0.12, y: Rk.y - H * 0.02 }], W * 0.006, "rgba(255,255,255,.15)"); // スカートのひだ
+      line([{ x: Rh.x - W * 0.03, y: Rh.y - H * 0.008 }, { x: Lh.x + W * 0.03, y: Lh.y - H * 0.008 }], W * 0.016, "#283a63"); }
+  } else {
+    // 肌着（白）：女の子はキャミソールとペチコート、男の子は U 首シャツとステテコ
+    if (m) { for (const [S, E] of [[Ls, P(13)], [Rs, P(14)]]) line([S, { x: S.x + (E.x - S.x) * 0.3, y: S.y + (E.y - S.y) * 0.3 }], W * 0.08, "#fbfaf7");
+      torso(Rs.y - H * 0.006, "#fbfaf7"); if (!back) ell(cx, Rs.y, W * 0.05, H * 0.02, SKIN);
+      shape([[Rh.x - W * 0.025, Rh.y], [Lh.x + W * 0.025, Lh.y], [Lk.x + W * 0.04, Lk.y + H * 0.02], [cx + W * 0.008, Lk.y + H * 0.02], [cx, Lh.y + H * 0.06], [cx - W * 0.008, Rk.y + H * 0.02], [Rk.x - W * 0.04, Rk.y + H * 0.02]], "#f4f0e8"); }
+    else { torso(Rs.y + H * 0.02, "#fdf7f2"); for (const S of [Ls, Rs]) line([{ x: S.x - (S.x - cx) * 0.25, y: S.y - H * 0.004 }, { x: S.x - (S.x - cx) * 0.3, y: Rs.y + H * 0.024 }], W * 0.01, "#fdf7f2"); // 肩ひも
+      shape([[Rh.x - W * 0.03, Rh.y], [Lh.x + W * 0.03, Lh.y], [Lk.x + W * 0.06, Lk.y], [Rk.x - W * 0.06, Rk.y]], "#fbf3ee");
+      for (let x = Rk.x - W * 0.055; x < Lk.x + W * 0.055; x += W * 0.03) ell(x + W * 0.015, Lk.y, W * 0.015, H * 0.008, "#fbf3ee"); } // すそのレース
+  }
   // 着物
-  const layer = drawKimono(newCanvas, W, H, lm, { pattern: look.pattern, color: look.color, sex, wear }, null, null);
+  const layer = drawKimono(newCanvas, W, H, lm, { pattern: look.pattern, color: look.color, sex, wear, back }, null, null);
   if (layer) c.drawImage(layer, 0, 0);
   // 手
   for (const [e, w] of [[13, 15], [14, 16]]) { const E = P(e), Wr = P(w); ell(Wr.x + (Wr.x - E.x) * 0.12, Wr.y + (Wr.y - E.y) * 0.12, W * 0.034, W * 0.038, SKIN); }
-  // 頭：後ろ髪 → 顔 → 前髪 → 目・口
-  const cx = W / 2, cy = H * 0.165, r = W * 0.115;
+  // 頭
+  const cy = H * 0.165, r = W * 0.115;
+  const kanzashi = (x, y) => { for (let k = 0; k < 5; k++) { const a = k * 2 * Math.PI / 5 - 0.3; ell(x + Math.cos(a) * r * 0.17, y + Math.sin(a) * r * 0.17, r * 0.15, r * 0.1, "#d8434b", a); } ell(x, y, r * 0.07, r * 0.07, "#f2c45a"); };
+  if (back) { // 後ろ姿：顔は見えず、髪と耳とうなじ
+    ell(cx - r * 0.98, cy + r * 0.12, r * 0.16, r * 0.22, SKIN2); ell(cx + r * 0.98, cy + r * 0.12, r * 0.16, r * 0.22, SKIN2);
+    ell(cx, cy + r * 0.05, r * 0.95, r * 0.98, SKIN);
+    if (m) { c.fillStyle = HAIR; c.beginPath(); c.moveTo(cx - r * 1.02, cy + r * 0.3); c.quadraticCurveTo(cx - r * 1.12, cy - r * 1.15, cx, cy - r * 1.08); c.quadraticCurveTo(cx + r * 1.12, cy - r * 1.15, cx + r * 1.02, cy + r * 0.3);
+      c.quadraticCurveTo(cx + r * 0.7, cy + r * 0.85, cx, cy + r * 0.82); c.quadraticCurveTo(cx - r * 0.7, cy + r * 0.85, cx - r * 1.02, cy + r * 0.3); c.fill(); }
+    else { c.fillStyle = HAIR; c.beginPath(); c.moveTo(cx - r * 1.04, cy + r * 0.2); c.quadraticCurveTo(cx - r * 1.12, cy - r * 1.1, cx, cy - r * 1.05); c.quadraticCurveTo(cx + r * 1.12, cy - r * 1.1, cx + r * 1.04, cy + r * 0.2);
+      c.quadraticCurveTo(cx + r * 0.8, cy + r * 0.62, cx, cy + r * 0.6); c.quadraticCurveTo(cx - r * 0.8, cy + r * 0.62, cx - r * 1.04, cy + r * 0.2); c.fill(); // まとめ髪（うなじを見せる）
+      ell(cx, cy - r * 0.35, r * 0.48, r * 0.42, "#3a2c26"); ell(cx, cy - r * 0.35, r * 0.3, r * 0.26, HAIR); kanzashi(cx - r * 0.5, cy - r * 0.62); }
+    return;
+  }
   if (!m) { ell(cx, cy - r * 1.05, r * 0.5, r * 0.42, HAIR); ell(cx, cy - r * 0.12, r * 1.1, r * 0.98, HAIR); } // おだんごと後ろ髪
   ell(cx - r * 0.98, cy + r * 0.12, r * 0.16, r * 0.22, SKIN2); ell(cx + r * 0.98, cy + r * 0.12, r * 0.16, r * 0.22, SKIN2); // 耳
   ell(cx, cy + r * 0.05, r * 0.95, r * 0.98, SKIN);
@@ -494,7 +573,7 @@ function drawChar(c, sex, wear, look) {
   else { c.moveTo(cx - r * 1.0, cy + r * 0.35); c.quadraticCurveTo(cx - r * 1.12, cy - r * 1.1, cx, cy - r * 1.02); c.quadraticCurveTo(cx + r * 1.12, cy - r * 1.1, cx + r * 1.0, cy + r * 0.35);
     c.quadraticCurveTo(cx + r * 0.8, cy - r * 0.2, cx + r * 0.15, cy - r * 0.32); c.quadraticCurveTo(cx - r * 0.1, cy - r * 0.15, cx - r * 0.2, cy - r * 0.35); c.quadraticCurveTo(cx - r * 0.75, cy - r * 0.25, cx - r * 1.0, cy + r * 0.35); }
   c.closePath(); c.fill();
-  if (!m) { for (let k = 0; k < 5; k++) { const a = k * 2 * Math.PI / 5 - 0.3; ell(cx + r * 0.62 + Math.cos(a) * r * 0.17, cy - r * 0.92 + Math.sin(a) * r * 0.17, r * 0.15, r * 0.1, "#d8434b", a); } ell(cx + r * 0.62, cy - r * 0.92, r * 0.07, r * 0.07, "#f2c45a"); } // かんざし
+  if (!m) kanzashi(cx + r * 0.62, cy - r * 0.92);
   for (const s of [-1, 1]) {
     line([{ x: cx + s * r * 0.55, y: cy - r * 0.08 }, { x: cx + s * r * 0.22, y: cy - r * 0.12 }], m ? r * 0.08 : r * 0.05, HAIR); // まゆ
     ell(cx + s * r * 0.38, cy + r * 0.15, r * 0.11, r * 0.16, "#3a2a24"); ell(cx + s * r * 0.35, cy + r * 0.09, r * 0.04, r * 0.05, "#fff"); // 目
@@ -502,10 +581,17 @@ function drawChar(c, sex, wear, look) {
   }
   c.strokeStyle = "#b5524d"; c.lineWidth = r * 0.05; c.lineCap = "round"; c.beginPath(); c.arc(cx, cy + r * 0.45, r * 0.14, 0.15 * Math.PI, 0.85 * Math.PI); c.stroke(); // 口
 }
+// 画面のキャラ。後ろを向くときは、横に縮めて広げる（くるっと回って見える）
+const turn = { back: false, from: false, t0: 0 };
+function setBack(b) { if (turn.back === b) return; turn.from = turn.back; turn.back = b; turn.t0 = performance.now(); $("#turnBtn").textContent = b ? "↻ 前を見る" : "↻ 後ろを見る"; requestAnimationFrame(turnTick); }
+function turnTick() { drawGame(); if (performance.now() - turn.t0 < 360) requestAnimationFrame(turnTick); }
 function drawGame() {
-  const cv = $("#gcv"); if (!cv) return; const g = state.game;
-  if (g?.action) return drawAction(cv.getContext("2d"), g.action, performance.now());
-  drawChar(cv.getContext("2d"), state.sex, g ? g.worn : [], g || { pattern: state.pattern, color: state.color });
+  const cv = $("#gcv"); if (!cv) return; const g = state.game, c = cv.getContext("2d");
+  const k = Math.min(1, (performance.now() - turn.t0) / 360), back = k < 0.5 ? turn.from : turn.back, sx = Math.max(0.04, Math.abs(Math.cos(k * Math.PI)));
+  const off = drawGame.off || (drawGame.off = newCanvas(CHAR_W, CHAR_H)), oc = off.getContext("2d");
+  if (g?.action) drawAction(oc, g.action, performance.now(), back);
+  else drawChar(oc, state.sex, g ? g.worn : [], g || { pattern: state.pattern, color: state.color }, { back, casual: !g });
+  c.clearRect(0, 0, CHAR_W, CHAR_H); c.save(); c.translate(CHAR_W / 2, 0); c.scale(sx, 1); c.drawImage(off, -CHAR_W / 2, 0); c.restore();
 }
 // ---- 指の動き（キャラの上で指を動かして着せる）----
 // クイズ：正しい品物を選んだあと、その品物の動きをする。体験：本物の着付けの手順を、1 つずつ動きで体験する
@@ -529,9 +615,9 @@ const REAL = {
     { type: "across", geo: "ohashori", name: "おはしょりを整える", msg: "腰紐の下に出た「おはしょり」のしわを、左から右へなでて整えよう" },
     { type: "eri", name: "着物の衿を合わせる", msg: "着物の衿も右前。長襦袢の衿にそろえて、上になる衿を重ねよう" },
     { add: "date", type: "spin1", name: "伊達締めを締める", msg: "胸の下に伊達締めを 1 周巻いて、衿がくずれないように押さえよう" },
-    { add: "obi", type: "spin", name: "帯を巻く", msg: "いよいよ帯。おなかのまわりにぐるぐる 2 周巻こう" },
+    { add: "obi", type: "spin", untie: true, name: "帯を巻く", msg: "いよいよ帯。おなかのまわりにぐるぐる 2 周巻こう" },
     { type: "pull", name: "帯を締める", msg: "帯のはしを引いて締めよう。きつすぎず、ゆるすぎず。メーターが緑のところで指をはなす" },
-    { type: "tie", geo: "otaiko", name: "お太鼓を結ぶ", msg: "背中でお太鼓を作ろう。両はしを真ん中へ引いて結ぶ（背中なので前からは見えません）" },
+    { type: "tie", geo: "otaiko", tieBow: true, view: "back", name: "お太鼓を結ぶ", msg: "後ろを向いたよ。背中でお太鼓を作ろう。両はしを真ん中へ引いて結ぶ" },
     { add: "obiage", type: "across", name: "帯揚げを整える", msg: "帯の上に帯揚げを、左から右へなでて整えよう" },
     { add: "obijime", type: "tie", name: "帯締めを結ぶ", msg: "最後に帯締め。両はしを真ん中へ引いて結べば完成！" },
   ],
@@ -543,9 +629,9 @@ const REAL = {
     { type: "eri", name: "着物の衿を合わせる", msg: "着物の衿も右前。上になる衿を重ねよう" },
     { type: "spin1", geo: "koshi", name: "腰紐を巻く", msg: "腰骨のあたりに腰紐を 1 周巻こう" },
     { type: "tie", geo: "koshi", name: "腰紐を結ぶ", msg: "腰紐の両はしを真ん中へ引いて結ぼう" },
-    { add: "kaku", type: "spin", name: "角帯を巻く", msg: "角帯を腰の低い位置に、ぐるぐる 2 周巻こう" },
+    { add: "kaku", type: "spin", untie: true, name: "角帯を巻く", msg: "角帯を腰の低い位置に、ぐるぐる 2 周巻こう" },
     { type: "pull", name: "角帯を締める", msg: "角帯のはしを引いて締めよう。メーターが緑のところで指をはなす" },
-    { type: "tie", geo: "kai", name: "貝の口に結ぶ", msg: "角帯を「貝の口」に結ぼう。両はしを真ん中へ（結び目は背中です）" },
+    { type: "tie", geo: "kai", tieBow: true, view: "back", name: "貝の口に結ぶ", msg: "後ろを向いたよ。角帯を背中で「貝の口」に結ぼう。両はしを真ん中へ" },
     { add: "hakama", type: "up", name: "袴をはく", msg: "袴に足を入れて、足もとから腰までなぞり上げよう" },
     { type: "tie", geo: "hakama", name: "袴の紐を結ぶ", msg: "袴の紐の両はしを真ん中へ引いて結ぼう" },
     { add: "haori", type: "down", name: "羽織をはおる", msg: "羽織を肩からはおらせよう" },
@@ -572,23 +658,25 @@ function actionGeo(key, type) {
   if (type === "hem") return { target: hem, top: hem - 110, floor: CHAR_H - 4, x0: Math.min(k.body[3].x, k.body[4].x), x1: Math.max(k.body[3].x, k.body[4].x), tile: Math.max(16, Math.round(k.sw * 0.42)) };
   if (type === "pull") return { y: waist.y, x0: cx + k.hipW * 0.55, len: 90 };
 }
-function charCanvas(wear) { const cv = newCanvas(CHAR_W, CHAR_H); drawChar(cv.getContext("2d"), state.sex, wear, state.game); return cv; }
-// add = 終わったら着る物（無ければ見た目はそのまま）
-function startAction(add, type, key = add, msg = null) {
+function charCanvas(wear, back) { const cv = newCanvas(CHAR_W, CHAR_H); drawChar(cv.getContext("2d"), state.sex, wear, state.game, { back }); return cv; }
+// add = 終わったら着る物（無ければ見た目はそのまま）。step = 着付け体験の手順（untie = 巻いただけで、まだ結んでいない／tieBow = 結ぶ）
+function startAction(add, type, key = add, msg = null, step = {}) {
   const g = state.game, geo = actionGeo(key, type), wear = type === "eri" && g.mode === "quiz" ? [...g.worn, add] : g.worn;
-  g.action = { add: type === "eri" && g.mode === "quiz" ? add : add, type, key, geo, p: 0, sum: 0, drag: null, tries: 0,
-    hands: type === "tie" ? [geo.x0, geo.x1] : null, hy: geo.floor, tension: 0,
-    base: charCanvas(wear), full: add ? charCanvas([...g.worn, add]) : null, bare: type === "hem" ? charCanvas(g.worn.filter(x => x !== "kimono")) : null };
+  const wears = { base: wear, full: add ? [...g.worn, add, ...(step.untie ? ["nomusubi"] : [])] : null, bare: type === "hem" ? g.worn.filter(x => x !== "kimono") : null }, cache = {};
+  g.action = { add, type, key, geo, step, p: 0, sum: 0, drag: null, hands: type === "tie" ? [geo.x0, geo.x1] : null, hy: geo.floor, tension: 0,
+    img: (name, back) => cache[name + back] || (cache[name + back] = charCanvas(wears[name], back)) }; // 前と後ろの絵は、要るときに作って取っておく
   if (geo.cord === null) geo.cord = (COLORS.find(c => c.id === g.color) || COLORS[0]).obi;
+  if (type === "eri") setBack(false); // 衿は前から
   $("#gMsg").textContent = msg || ((type === "eri" ? "" : `◯ ${ITEMS[add].name}！ `) + ACTION_MSG[type]);
   renderGame(); requestAnimationFrame(actionTick);
 }
-function startStep() { const g = state.game, s = g.steps[g.si]; startAction(s.add || null, s.type, s.geo || s.add, `${g.si + 1}. ${s.name}：${s.msg}`); }
+function startStep() { const g = state.game, s = g.steps[g.si]; setBack(s.view === "back"); startAction(s.add || null, s.type, s.geo || s.add, `${g.si + 1}. ${s.name}：${s.msg}`, s); }
 function actionTick() { if (state.game?.action && !$("#game").hidden) { drawGame(); requestAnimationFrame(actionTick); } }
 function finishAction() {
   const g = state.game, a = g.action;
   if (g.mode === "real") {
     g.action = null; if (a.add) g.worn.push(a.add);
+    if (a.step.untie) g.worn.push("nomusubi"); if (a.step.tieBow) g.worn = g.worn.filter(x => x !== "nomusubi");
     g.si++; if (g.si >= g.steps.length) return finishGame();
     return startStep();
   }
@@ -603,24 +691,25 @@ function miss(msg) { // 体験は仕上がりの点が減る、クイズはタ�
   else { g.pen += PENALTY[g.level]; $("#gMsg").textContent = msg + (g.level === "easy" ? "" : `（+${PENALTY[g.level]}秒）`); }
   renderGame();
 }
-function drawAction(c, a, t) {
+function drawAction(c, a, t, back = false) {
+  const img = name => a.img(name, back);
   const { type: ty, geo: g } = a, p = Math.min(1, a.p);
   c.clearRect(0, 0, CHAR_W, CHAR_H);
   if (ty === "hem") { // 裾：長すぎると床まで、短すぎると足が出る
-    if (a.hy >= g.target) { c.drawImage(a.base, 0, 0); if (a.hy > g.target) { // 長すぎるときは、同じ柄の布を床までのばす
+    if (a.hy >= g.target) { c.drawImage(img("base"), 0, 0); if (a.hy > g.target) { // 長すぎるときは、同じ柄の布を床までのばす
       const col = COLORS.find(x => x.id === state.game.color) || COLORS[0];
       c.fillStyle = c.createPattern(patternTile(newCanvas, state.game.pattern, g.tile, col.base, col.accent), "repeat"); c.fillRect(g.x0, g.target - 2, g.x1 - g.x0, a.hy - g.target + 2); } }
-    else { c.drawImage(a.bare, 0, 0); c.save(); c.beginPath(); c.rect(0, 0, CHAR_W, a.hy); c.clip(); c.drawImage(a.base, 0, 0); c.restore(); }
+    else { c.drawImage(img("bare"), 0, 0); c.save(); c.beginPath(); c.rect(0, 0, CHAR_W, a.hy); c.clip(); c.drawImage(img("base"), 0, 0); c.restore(); }
   } else {
-    c.drawImage(a.base, 0, 0);
-    if (a.full) { // 途中まで着た様子：なぞったところまで見せる
+    c.drawImage(img("base"), 0, 0);
+    if (a.add) { // 途中まで着た様子：なぞったところまで見せる
       c.save(); c.beginPath();
       if (ty === "down") c.rect(0, 0, CHAR_W, g.y0 + (g.y1 - g.y0) * p);
       else if (ty === "up") { const y = g.y0 + (g.y1 - g.y0) * p; c.rect(0, y, CHAR_W, CHAR_H - y); }
       else if (ty.startsWith("spin")) { const hw = CHAR_W / 2 * p; c.rect(CHAR_W / 2 - hw, 0, hw * 2, CHAR_H); }
       else if (ty === "across") c.rect(0, 0, g.x0 + (g.x1 - g.x0) * p, CHAR_H);
       else c.rect(0, 0, 0, 0);
-      c.clip(); c.drawImage(a.full, 0, 0); c.restore();
+      c.clip(); c.drawImage(img("full"), 0, 0); c.restore();
     }
   }
   // 目印（点線は流れるように動かす）
@@ -827,6 +916,7 @@ document.addEventListener("click", async e => {
   const out = $("#game").hidden ? $("#out") : $("#gcv");
   switch (el.dataset.act) {
     case "back": history.back(); break;
+    case "turn": setBack(!turn.back); break;
     case "openGame": show("game"); renderChips(); drawGame(); renderGame(); break;
     case "gameStart": startGame(); break;
     case "gameQuit": stopGame(); break;
