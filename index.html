@@ -87,6 +87,8 @@ h1 em { font-style: normal; color: var(--shu); }
   cursor: pointer; font-weight: 700; font-size: 14px; line-height: 1.35; touch-action: manipulation; }
 .item small { display: block; font-weight: 500; font-size: 11.5px; color: var(--muted); }
 .item .sw { width: 26px; height: 26px; border-radius: 6px; border: 1.5px solid rgba(0,0,0,.15); }
+.item.wait { opacity: .55; }
+#gcv { touch-action: none; }
 .item.done { opacity: .4; cursor: default; }
 .item.hint { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
 .item.ng { animation: shake .35s; border-color: var(--shu); }
@@ -499,8 +501,117 @@ function drawChar(c, sex, wear, look) {
 }
 function drawGame() {
   const cv = $("#gcv"); if (!cv) return; const g = state.game;
+  if (g?.action) return drawAction(cv.getContext("2d"), g.action, performance.now());
   drawChar(cv.getContext("2d"), state.sex, g ? g.worn : [], g || { pattern: state.pattern, color: state.color });
 }
+// ---- 品物ごとの手の動き（正しい品物を選んだあと、キャラの上で指を動かして着せる）----
+const ACTIONS = { hada: "down", juban: "down", kimono: "down", haori: "down", hakama: "up", date: "spin1", obi: "spin", kaku: "spin", obiage: "across", obijime: "tie", himo: "tie" };
+const ACTION_MSG = {
+  down: "肩から下へ、指でなぞって着せよう", up: "足もとから腰まで、なぞり上げてはかせよう",
+  spin: "おなかのまわりを指でぐるぐる 2 周して巻こう", spin1: "おなかのまわりを 1 周して締めよう",
+  across: "帯の上を、左から右へなぞって整えよう", tie: "ひもの両はしを、真ん中まで引っぱって結ぼう",
+  eri: "衿を合わせよう。上になる衿を、斜め下へなぞって",
+};
+// 動きの場所（キャラの体の位置から決める）
+function actionGeo(id, type) {
+  const k = kimonoShape(charPose(state.sex), CHAR_W, CHAR_H), tl = Math.hypot(k.hm.x - k.sm.x, k.hm.y - k.sm.y), at = t => ({ x: k.sm.x + k.down.x * tl * t, y: k.sm.y + k.down.y * tl * t });
+  const male = state.sex === "m", oh = Math.hypot(k.obiBot.x - k.obiTop.x, k.obiBot.y - k.obiTop.y);
+  const waist = male ? at(0.93) : { x: (k.obiTop.x + k.obiBot.x) / 2, y: (k.obiTop.y + k.obiBot.y) / 2 };
+  const hem = Math.min(k.hemY, CHAR_H - 10);
+  if (type === "down") return { x: CHAR_W / 2, y0: k.sm.y - 24, y1: id === "haori" ? at(1.85).y : hem };
+  if (type === "up") return { x: CHAR_W / 2, y0: hem + 10, y1: at(0.9).y };
+  if (type === "spin" || type === "spin1") return { c: waist, rx: k.hipW * 0.8, ry: oh * 0.9 + 10, turns: type === "spin" ? 2 : 1 };
+  if (type === "across") return { y: k.obiTop.y + oh * 0.05, x0: CHAR_W / 2 - k.hipW * 0.55, x1: CHAR_W / 2 + k.hipW * 0.55 };
+  if (type === "tie") { const y = male ? at(0.45).y : k.obiTop.y + oh * 0.55, w = male ? k.sw * 0.55 : k.hipW * 0.55; return { y, cx: CHAR_W / 2, x0: CHAR_W / 2 - w, x1: CHAR_W / 2 + w }; }
+  if (type === "eri") return { up: k.nL, under: k.nR }; // 上になる衿 = 着る人の左（向かって右）
+}
+function charCanvas(wear) { const cv = newCanvas(CHAR_W, CHAR_H); drawChar(cv.getContext("2d"), state.sex, wear, state.game); return cv; }
+function startAction(id, type = ACTIONS[id]) {
+  const g = state.game, geo = actionGeo(id, type);
+  g.action = { id, type, geo, p: 0, sum: 0, drag: null, hands: type === "tie" ? [geo.x0, geo.x1] : null,
+    base: charCanvas(type === "eri" ? [...g.worn, id] : g.worn), full: charCanvas([...g.worn, id]) };
+  $("#gMsg").textContent = (type === "eri" ? "" : `◯ ${ITEMS[id].name}！ `) + ACTION_MSG[type];
+  renderGame(); requestAnimationFrame(actionTick);
+}
+function actionTick() { if (state.game?.action && !$("#game").hidden) { drawGame(); requestAnimationFrame(actionTick); } }
+function finishAction() {
+  const g = state.game, a = g.action;
+  if (a.id === "kimono" && a.type === "down") return startAction("kimono", "eri"); // 着物は衿合わせまで
+  g.action = null; g.worn.push(a.id); g.hint = null; $("#gMsg").textContent = `◯ ${ITEMS[a.id].name}を着せました`;
+  if (g.worn.length === g.order.length) return finishGame();
+  drawGame(); renderGame();
+}
+function drawAction(c, a, t) {
+  const { type: ty, geo: g } = a, p = Math.min(1, a.p);
+  c.clearRect(0, 0, CHAR_W, CHAR_H); c.drawImage(a.base, 0, 0);
+  // 途中まで着た様子：なぞったところまで見せる
+  c.save(); c.beginPath();
+  if (ty === "down") c.rect(0, 0, CHAR_W, g.y0 + (g.y1 - g.y0) * p);
+  else if (ty === "up") { const y = g.y0 + (g.y1 - g.y0) * p; c.rect(0, y, CHAR_W, CHAR_H - y); }
+  else if (ty.startsWith("spin")) { const hw = CHAR_W / 2 * p; c.rect(CHAR_W / 2 - hw, 0, hw * 2, CHAR_H); }
+  else if (ty === "across") c.rect(0, 0, g.x0 + (g.x1 - g.x0) * p, CHAR_H);
+  else c.rect(0, 0, 0, 0);
+  c.clip(); c.drawImage(a.full, 0, 0); c.restore();
+  // 目印（点線は流れるように動かす）
+  const guide = (fn, w = 5) => { c.save(); c.lineCap = "round"; c.setLineDash([10, 10]); c.lineDashOffset = -t / 40;
+    c.strokeStyle = "rgba(42,35,32,.55)"; c.lineWidth = w + 3; fn(); c.stroke(); c.strokeStyle = "#fff"; c.lineWidth = w; fn(); c.stroke(); c.restore(); };
+  const solid = (fn, col = "#c99a2e", w = 7) => { c.save(); c.lineCap = "round"; c.strokeStyle = col; c.lineWidth = w; fn(); c.stroke(); c.restore(); };
+  const head = (x, y, ang) => { c.save(); c.translate(x, y); c.rotate(ang); c.fillStyle = "#fff"; c.strokeStyle = "rgba(42,35,32,.55)"; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(12, 0); c.lineTo(-8, -10); c.lineTo(-8, 10); c.closePath(); c.fill(); c.stroke(); c.restore(); };
+  const dot = (x, y, r, on) => { c.save(); c.fillStyle = on ? "#c99a2e" : "#fff"; c.strokeStyle = "rgba(42,35,32,.6)"; c.lineWidth = 3; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); c.stroke(); c.restore(); };
+  if (ty === "down" || ty === "up") {
+    const x = g.x + 70 > CHAR_W ? g.x : g.x, gx = CHAR_W * 0.9, dir = ty === "down" ? 1 : -1;
+    guide(() => { c.beginPath(); c.moveTo(gx, g.y0); c.lineTo(gx, g.y1); }); head(gx, g.y1, dir * Math.PI / 2);
+    solid(() => { c.beginPath(); c.moveTo(gx, g.y0); c.lineTo(gx, g.y0 + (g.y1 - g.y0) * p); });
+    if (!a.drag) dot(x, g.y0 + (g.y1 - g.y0) * p, 14 + 3 * Math.sin(t / 200), false);
+  } else if (ty.startsWith("spin")) {
+    guide(() => { c.beginPath(); c.ellipse(g.c.x, g.c.y, g.rx, g.ry, 0, 0, 7); });
+    head(g.c.x + g.rx, g.c.y, Math.PI / 2);
+    solid(() => { c.beginPath(); c.ellipse(g.c.x, g.c.y, g.rx, g.ry, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, (a.p * g.turns) % 1 || (a.p >= 1 ? 1 : 0))); });
+    if (g.turns > 1) { c.save(); c.font = "700 18px sans-serif"; c.fillStyle = "#2a2320"; c.textAlign = "center"; c.fillText(`${Math.min(g.turns, Math.floor(a.p * g.turns))} / ${g.turns} 周`, g.c.x, g.c.y - g.ry - 12); c.restore(); }
+  } else if (ty === "across") {
+    guide(() => { c.beginPath(); c.moveTo(g.x0, g.y); c.lineTo(g.x1, g.y); }); head(g.x1, g.y, 0);
+    solid(() => { c.beginPath(); c.moveTo(g.x0, g.y); c.lineTo(g.x0 + (g.x1 - g.x0) * p, g.y); });
+  } else if (ty === "tie") {
+    const cord = a.id === "himo" ? "#f4f1ea" : "#d5373f";
+    solid(() => { c.beginPath(); c.moveTo(g.x0 - 20, g.y); c.lineTo(a.hands[0], g.y); c.moveTo(g.x1 + 20, g.y); c.lineTo(a.hands[1], g.y); }, cord, 6);
+    dot(g.cx, g.y, 10 + 3 * Math.sin(t / 200), false);
+    a.hands.forEach(hx => dot(hx, g.y, 15, true));
+  } else if (ty === "eri") {
+    const pulse = 18 + 3 * Math.sin(t / 200);
+    dot(g.up.x, g.up.y + 10, pulse, state.game.hint === "eri"); dot(g.under.x, g.under.y + 10, pulse, false);
+  }
+}
+function actionPoint(e) { const r = $("#gcv").getBoundingClientRect(); return { x: (e.clientX - r.left) * CHAR_W / r.width, y: (e.clientY - r.top) * CHAR_H / r.height }; }
+function actionDown(e) {
+  const a = state.game?.action; if (!a) return; e.preventDefault();
+  const pt = actionPoint(e), g = a.geo; $("#gcv").setPointerCapture?.(e.pointerId);
+  a.drag = { start: pt, last: pt, hand: null };
+  if (a.type === "tie") { const d = a.hands.map(h => Math.hypot(h - pt.x, g.y - pt.y)), i = d[0] < d[1] ? 0 : 1; a.drag.hand = d[i] < 60 ? i : null; }
+  if (a.type === "eri") { const du = Math.hypot(pt.x - g.up.x, pt.y - g.up.y), dn = Math.hypot(pt.x - g.under.x, pt.y - g.under.y); a.drag.side = Math.min(du, dn) < 70 ? (du < dn ? "up" : "under") : null; }
+}
+function actionMove(e) {
+  const a = state.game?.action; if (!a?.drag) return; e.preventDefault();
+  const pt = actionPoint(e), g = a.geo, d = a.drag, ty = a.type;
+  if (ty === "down" || ty === "up") { if (Math.abs(d.start.y - g.y0) < Math.abs(g.y1 - g.y0) * 0.4) a.p = Math.max(a.p, (pt.y - g.y0) / (g.y1 - g.y0)); }
+  else if (ty.startsWith("spin")) {
+    const ang = q => Math.atan2((q.y - g.c.y) / g.ry, (q.x - g.c.x) / g.rx);
+    let da = ang(pt) - ang(d.last); if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI;
+    if (Math.hypot((pt.x - g.c.x) / g.rx, (pt.y - g.c.y) / g.ry) > 0.25) a.sum += da; // 真ん中すぎる所は数えない
+    a.p = Math.abs(a.sum) / (2 * Math.PI * g.turns);
+  }
+  else if (ty === "across") { if (d.start.x < g.x0 + (g.x1 - g.x0) * 0.35 && Math.abs(pt.y - g.y) < 80) a.p = Math.max(a.p, (pt.x - g.x0) / (g.x1 - g.x0)); }
+  else if (ty === "tie" && d.hand !== null) { const i = d.hand; a.hands[i] = i ? Math.min(g.x1, Math.max(g.cx, pt.x)) : Math.max(g.x0, Math.min(g.cx, pt.x)); a.p = a.hands.every(h => Math.abs(h - g.cx) < 14) ? 1 : 0; }
+  else if (ty === "eri" && d.side && Math.hypot(pt.x - d.start.x, pt.y - d.start.y) > 35) {
+    if (d.side === "up") a.p = 1;
+    else { const gm = state.game; gm.miss++; gm.pen += PENALTY[gm.level]; if (gm.level === "easy") gm.hint = "eri"; d.side = null; navigator.vibrate?.(80); renderGame();
+      $("#gMsg").textContent = "✕ その衿が上だと「左前」。着る人の左の衿（向かって右）を上に重ねます" + (gm.level === "easy" ? "（光っている方）" : `（+${PENALTY[gm.level]}秒）`); }
+  }
+  d.last = pt;
+  if (a.p >= (ty === "down" || ty === "up" ? 0.92 : ty === "across" ? 0.9 : 1)) { a.drag = null; a.p = 1; finishAction(); }
+}
+function actionUp() { const a = state.game?.action; if (a) a.drag = null; }
+for (const [t, f] of [["pointerdown", actionDown], ["pointermove", actionMove], ["pointerup", actionUp], ["pointercancel", actionUp]]) document.getElementById("gcv").addEventListener(t, f, { passive: false });
 let gameTimer;
 const swatch = id => { const col = COLORS.find(c => c.id === (state.game?.color || state.color)) || COLORS[0];
   return { hada: "#fbfaf7", juban: state.sex === "m" ? "#ece6dc" : "#f7eeea", kimono: col.base, date: "#e6d8e6", obi: col.obi, obiage: "#f0a7b8", obijime: "#d5373f", kaku: "#3b3230", hakama: "repeating-linear-gradient(90deg,#5f5b58 0 4px,#2c2a29 4px 5px)", haori: "#1f1b1a", himo: "#f4f1ea" }[id]; };
@@ -518,7 +629,7 @@ function renderGame() {
   $("#gStep").textContent = `${g.worn.length} / ${g.order.length}`;
   $("#gMiss").textContent = `まちがい ${g.miss}`;
   $("#gItems").innerHTML = g.cards.map(id => { const done = g.worn.includes(id);
-    return `<button class="item ${done ? "done" : ""} ${g.hint === id ? "hint" : ""}" data-item="${id}" ${done ? "disabled" : ""}><span class="sw" style="background:${swatch(id)}"></span>`
+    return `<button class="item ${done ? "done" : ""} ${g.hint === id ? "hint" : ""} ${g.action ? "wait" : ""}" data-item="${id}" ${done ? "disabled" : ""}><span class="sw" style="background:${swatch(id)}"></span>`
       + `<span>${done ? "✓ " : ""}${ITEMS[id].name}${g.level !== "hard" ? `<small>${ITEMS[id].desc}</small>` : ""}</span></button>`; }).join("");
 }
 function startGame() {
@@ -526,7 +637,7 @@ function startGame() {
   do cards = [...order].sort(() => Math.random() - 0.5); while (cards.join() === order.join());
   clearInterval(gameTimer);
   const pick = a => a[Math.floor(Math.random() * a.length)];
-  state.game = { order, cards, worn: [], miss: 0, pen: 0, level: state.level, start: performance.now(), done: false, hint: null, pattern: pick(PATTERNS).id, color: pick(COLORS).id };
+  state.game = { action: null, order, cards, worn: [], miss: 0, pen: 0, level: state.level, start: performance.now(), done: false, hint: null, pattern: pick(PATTERNS).id, color: pick(COLORS).id };
   $("#gMsg").textContent = "着せる順番に、品物を選んでください"; $("#gTime").textContent = "0.0";
   gameTimer = setInterval(() => { if (state.game && !state.game.done) $("#gTime").textContent = gameTime(state.game).toFixed(1); }, 100);
   drawGame(); renderGame();
@@ -534,12 +645,9 @@ function startGame() {
 function stopGame() { clearInterval(gameTimer); state.game = null; drawGame(); renderGame(); }
 function tapItem(id) {
   const g = state.game; if (!g || g.done || g.worn.includes(id)) return;
+  if (g.action) { $("#gMsg").textContent = `先に${ITEMS[g.action.id].name}を仕上げよう。` + ACTION_MSG[g.action.type]; return; }
   const need = g.order[g.worn.length];
-  if (id === need) {
-    g.worn.push(id); g.hint = null; $("#gMsg").textContent = `◯ ${ITEMS[id].name}を着せました`;
-    if (g.worn.length === g.order.length) return finishGame();
-    drawGame(); renderGame(); return;
-  }
+  if (id === need) { g.hint = null; startAction(id); return; }
   g.miss++; g.pen += PENALTY[g.level];
   if (g.level === "easy") g.hint = need;
   $("#gMsg").textContent = g.level === "hard" ? "✕ ちがいます（+5秒）" : `✕ ${ITEMS[id].why}` + (g.level === "easy" ? `。次は「${ITEMS[need].name}」です` : "（+3秒）");
@@ -549,7 +657,7 @@ function tapItem(id) {
 function finishGame() {
   const g = state.game; g.done = true; clearInterval(gameTimer);
   const t = gameTime(g), per = t / g.order.length;
-  const stars = g.miss === 0 && per < 3 ? 3 : g.miss <= 1 && per < 6 ? 2 : 1;
+  const stars = g.miss === 0 && per < 6 ? 3 : g.miss <= 1 && per < 10 ? 2 : 1;
   const best = load(bestKey(), null), record = !best || t < best; if (record) store(bestKey(), t);
   $("#gStars").textContent = "★".repeat(stars) + "☆".repeat(3 - stars);
   $("#gResult").textContent = [, "もう少し！順番を覚えてもう一度", "上手に着せられました！", "お見事！着付け名人です"][stars]
