@@ -295,6 +295,9 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
   // 首・頭のあたり：首の線より上で、しかも真ん中寄り（肩は首の線より上に写っても着物で覆う。傾いた写真で片方の肩が出ないように）
   const headZone = p => !below(p, k.neck, k.sw * 0.12) && (Math.abs((p.x - k.neck.x) * k.side.x + (p.y - k.neck.y) * k.side.y) < k.sw * 0.3 || !below(p, k.neck, -k.sw * 0.35));
   const hands = k.sleeves.map(s => s.hand), hr = k.sw * 0.42;
+  // 手として着物の手前に残す所：手首の近くで、しかも袖口より先（袖の中の腕は着物で隠す）
+  const handZone = (p, r = 1) => k.sleeves.some(s => { const dx = s.hand.x - s.E.x, dy = s.hand.y - s.E.y, l = Math.hypot(dx, dy) || 1;
+    return Math.hypot(p.x - s.hand.x, p.y - s.hand.y) < hr * r && ((p.x - s.Wp.x) * dx + (p.y - s.Wp.y) * dy) / l > k.sw * 0.2; });
   const male = opts.sex === "m", back = !!opts.back, wear = opts.wear || (male ? WEAR.m : WEAR.f), has = id => wear.includes(id);
   const outer = has("kimono") || has("juban"); if (!outer && !has("hada")) return null;
   const fill = has("kimono") ? pat : has("juban") ? (male ? "#ece6dc" : "#f7eeea") : "#fbfaf7"; // 着物 > 長襦袢（無地）> 肌襦袢（白）
@@ -309,7 +312,7 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
     const m = newCanvas(seg.w, seg.h), mc = m.getContext("2d"), id = mc.createImageData(seg.w, seg.h);
     for (let y = 0; y < seg.h; y++) for (let x = 0; x < seg.w; x++) {
       const cls = seg.mask[y * seg.w + x], p = { x: (x + 0.5) * W / seg.w, y: (y + 0.5) * H / seg.h };
-      if ((cls === 4 || cls === 5 || cls === 2) && !headZone(p) && p.y < k.hemY - k.sw * 0.13 && !hands.some(h => Math.hypot(p.x - h.x, p.y - h.y) < hr * (cls === 2 ? 1 : 0.55))) id.data[(y * seg.w + x) * 4 + 3] = 255;
+      if ((cls === 4 || cls === 5 || cls === 2) && !headZone(p) && p.y < k.hemY - k.sw * 0.13 && !handZone(p, cls === 2 ? 1 : 0.55)) id.data[(y * seg.w + x) * 4 + 3] = 255;
     }
     mc.putImageData(id, 0, 0);
     const cover = newCanvas(W, H), cc = cover.getContext("2d"); cc.imageSmoothingEnabled = true; cc.drawImage(m, 0, 0, W, H);
@@ -368,7 +371,7 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
       ot.fillStyle = col.obi; ot.fillRect(0, 0, on, on); ot.fillStyle = "rgba(255,255,255,.28)"; ot.fillRect(0, on * 0.15, on, on * 0.08); ot.fillStyle = "rgba(0,0,0,.12)"; ot.fillRect(0, on * 0.6, on, on * 0.05);
       ot.strokeStyle = "rgba(255,255,255,.35)"; ot.lineWidth = Math.max(1, on * 0.06); ot.beginPath(); ot.moveTo(on * 0.2, on * 0.45); ot.lineTo(on * 0.5, on * 0.3); ot.lineTo(on * 0.8, on * 0.45); ot.stroke();
       obiPat = c.createPattern(obiTile, "repeat");
-      poly(c, obi, obiPat);
+      c.save(); c.shadowColor = "rgba(0,0,0,.32)"; c.shadowBlur = k.sw * 0.07; c.shadowOffsetY = k.sw * 0.025; poly(c, obi, obiPat); c.restore(); // 帯の下に影
       line2(obi[0], obi[1], k.sw * 0.01, "rgba(0,0,0,.25)"); line2(obi[3], obi[2], k.sw * 0.01, "rgba(0,0,0,.25)");
     }
     if (!back) {
@@ -391,7 +394,7 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
   } else {
     // 4) 男の人：角帯（腰の細い帯）・袴・羽織（上着）・羽織紐。後ろ姿では貝の口・袴の腰板・羽織の背紋
     const kt = at(0.84), kb = at(1.02), kw = k.hipW * 1.06;
-    if (has("kaku")) { poly(c, quad(kt, kb, kw, kw), "#3b3230"); const km = add(kt, k.down, tl * 0.09); band(add(km, k.side, -kw / 2), add(km, k.side, kw / 2), tl * 0.025, col.obi);
+    if (has("kaku")) { c.save(); c.shadowColor = "rgba(0,0,0,.3)"; c.shadowBlur = k.sw * 0.06; c.shadowOffsetY = k.sw * 0.02; poly(c, quad(kt, kb, kw, kw), "#3b3230"); c.restore(); const km = add(kt, k.down, tl * 0.09); band(add(km, k.side, -kw / 2), add(km, k.side, kw / 2), tl * 0.025, col.obi);
       if (back && tied) { const kc = add(kt, k.down, tl * 0.09); // 貝の口
         poly(c, [add(add(kc, k.side, -kw * 0.16), k.down, -tl * 0.1), add(add(kc, k.side, kw * 0.04), k.down, -tl * 0.1), add(add(kc, k.side, kw * 0.12), k.down, tl * 0.1), add(add(kc, k.side, -kw * 0.08), k.down, tl * 0.1)], "#2a2220");
         poly(c, [add(add(kc, k.side, -kw * 0.04), k.down, -tl * 0.08), add(add(kc, k.side, kw * 0.16), k.down, -tl * 0.08), add(add(kc, k.side, kw * 0.1), k.down, tl * 0.08), add(add(kc, k.side, -kw * 0.1), k.down, tl * 0.08)], "#4a3e3a");
@@ -426,16 +429,28 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
       c.fillStyle = "#f4f1ea"; c.beginPath(); c.ellipse(kn.x, kn.y, k.sw * 0.05, k.sw * 0.05, 0, 0, 7); c.fill();
       c.beginPath(); c.ellipse(kn.x, kn.y + k.sw * 0.12, k.sw * 0.035, k.sw * 0.08, 0, 0, 7); c.fill(); } // 房
   }
-  // 5) 写真のぼかした明るさを写す（大きな影と光だけ。元の服のしま模様などは写さない）
+  // 5) 写真の光を写して、布らしく見せる（写真があるときだけ。ゲームのキャラはイラストのまま）
+  //    ・大きくぼかした明るさ = 光の当たり方、少しだけぼかした明るさとの差 = 元の服のしわ（強すぎる模様は抑える）
+  //    ・光の色（暖かい・青っぽい）も少しうつす。着物のふちは少し暗くして丸みを出し、細かい布目を足す
   if (photo) {
-    const sw2 = Math.max(8, Math.round(W / 24)), sh2 = Math.max(8, Math.round(H / 24)), small = newCanvas(sw2, sh2), sc = small.getContext("2d");
-    sc.drawImage(photo, 0, 0, sw2, sh2); const blur = newCanvas(W, H), bc = blur.getContext("2d"); bc.imageSmoothingEnabled = true; bc.drawImage(small, 0, 0, W, H);
-    const img = c.getImageData(0, 0, W, H), d = img.data, pd = bc.getImageData(0, 0, W, H).data;
-    let sum = 0, n = 0; for (let i = 0; i < W * H; i += 5) if (d[i * 4 + 3] > 0) { const p = i * 4; sum += 0.299 * pd[p] + 0.587 * pd[p + 1] + 0.114 * pd[p + 2]; n++; }
-    const mean = n ? sum / n : 128;
+    const blurred = scale => { const w = Math.max(8, Math.round(W / scale)), h = Math.max(8, Math.round(H / scale)), sm = newCanvas(w, h), sc = sm.getContext("2d");
+      sc.imageSmoothingEnabled = true; sc.drawImage(photo, 0, 0, w, h); const big = newCanvas(W, H), bc = big.getContext("2d"); bc.imageSmoothingEnabled = true; bc.imageSmoothingQuality = "high"; bc.drawImage(sm, 0, 0, W, H); return bc.getImageData(0, 0, W, H).data; };
+    const coarse = blurred(24), fine = blurred(5);
+    const es = Math.max(2, k.sw * 0.1), ew2 = Math.max(4, Math.round(W / es)), eh2 = Math.max(4, Math.round(H / es)), em = newCanvas(ew2, eh2), emc = em.getContext("2d");
+    emc.imageSmoothingEnabled = true; emc.drawImage(layer, 0, 0, ew2, eh2); const eb = newCanvas(W, H), ebc = eb.getContext("2d"); ebc.imageSmoothingEnabled = true; ebc.imageSmoothingQuality = "high"; ebc.drawImage(em, 0, 0, W, H);
+    const ea = ebc.getImageData(0, 0, W, H).data; // ふちほど小さくなる
+    const img = c.getImageData(0, 0, W, H), d = img.data, lum = (a, p) => 0.299 * a[p] + 0.587 * a[p + 1] + 0.114 * a[p + 2];
+    let sum = 0, n = 0, tr = 0, tg = 0, tb = 0; for (let i = 0; i < W * H; i += 7) { const p = i * 4; if (d[p + 3] > 0) { sum += lum(coarse, p); tr += coarse[p]; tg += coarse[p + 1]; tb += coarse[p + 2]; n++; } }
+    const mean = n ? sum / n : 128, gray = n ? (tr + tg + tb) / 3 / n : 128;
+    const tint = n ? [tr / n / gray, tg / n / gray, tb / n / gray].map(t => 1 + 0.35 * (Math.max(0.8, Math.min(1.2, t)) - 1)) : [1, 1, 1];
+    let seed = 7; const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
     for (let i = 0; i < W * H; i++) { const p = i * 4; if (!d[p + 3]) continue;
-      const L = 0.299 * pd[p] + 0.587 * pd[p + 1] + 0.114 * pd[p + 2], f = Math.max(0.7, Math.min(1.2, 0.72 + 0.28 * L / mean));
-      d[p] = Math.min(255, d[p] * f); d[p + 1] = Math.min(255, d[p + 1] * f); d[p + 2] = Math.min(255, d[p + 2] * f); }
+      const Lc = lum(coarse, p), Lf = lum(fine, p);
+      const light = Math.max(0.55, Math.min(1.28, Math.pow(Math.max(1, Lc) / mean, 0.85)));
+      const fold = Math.max(0.84, Math.min(1.14, 1 + 0.9 * (Lf - Lc) / 255));
+      const edge = 0.74 + 0.26 * Math.min(1, ea[p + 3] / 255 * 1.3);
+      const f = light * fold * edge * (1 + (rnd() - 0.5) * 0.05);
+      for (let ch = 0; ch < 3; ch++) d[p + ch] = Math.max(0, Math.min(255, d[p + ch] * f * tint[ch])); }
     c.putImageData(img, 0, 0);
   }
   // 6) 顔・髪・手は着物の手前に残す（なめらかに切り抜く）
@@ -443,7 +458,7 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
     const m = newCanvas(seg.w, seg.h), mc = m.getContext("2d"), id = mc.createImageData(seg.w, seg.h);
     for (let y = 0; y < seg.h; y++) for (let x = 0; x < seg.w; x++) {
       const cls = seg.mask[y * seg.w + x], p = { x: (x + 0.5) * W / seg.w, y: (y + 0.5) * H / seg.h };
-      if (cls === 1 || cls === 3 || (cls === 2 && (hands.some(h => Math.hypot(p.x - h.x, p.y - h.y) < hr) || headZone(p)))) id.data[(y * seg.w + x) * 4 + 3] = 255;
+      if (cls === 1 || cls === 3 || (cls === 2 && (handZone(p) || headZone(p)))) id.data[(y * seg.w + x) * 4 + 3] = 255;
     }
     mc.putImageData(id, 0, 0);
     c.save(); c.globalCompositeOperation = "destination-out"; c.imageSmoothingEnabled = true; c.drawImage(m, 0, 0, W, H); c.restore();
