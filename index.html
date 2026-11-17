@@ -319,7 +319,10 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
   // 袖：肩 → ひじ → 手首の手前を上のふちにして、下へ垂らす（女の人は振袖で長く、男の人は短く）
   const sleeves = (f, dropK, thick) => { for (const s of k.sleeves) {
     const [a, b, d] = s.top, aw = k.sw * 0.3 * thick, drop = k.sw * dropK;
-    c.lineJoin = "round"; c.lineCap = "round"; c.strokeStyle = f; c.lineWidth = aw * 2; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.lineTo(d.x, d.y); c.stroke(); // 腕を包む
+    // 腕を包む筒（太い線ではなく塗った形で描く。柄の太線は端末によって欠けることがあるため）
+    for (const [p, q] of [[a, b], [b, d]]) { const dx = q.x - p.x, dy = q.y - p.y, l = Math.hypot(dx, dy) || 1, nx = -dy / l * aw, ny = dx / l * aw;
+      poly(c, [{ x: p.x + nx, y: p.y + ny }, { x: q.x + nx, y: q.y + ny }, { x: q.x - nx, y: q.y - ny }, { x: p.x - nx, y: p.y - ny }], f); }
+    for (const p of [a, b, d]) { c.fillStyle = f; c.beginPath(); c.arc(p.x, p.y, aw, 0, 7); c.fill(); }
     const bot = add(d, { x: 0, y: drop }), mid = add(b, { x: 0, y: drop * 0.9 });
     c.beginPath(); c.moveTo(b.x, b.y); c.lineTo(d.x, d.y); c.lineTo(bot.x, bot.y - drop * 0.18); c.quadraticCurveTo(bot.x, bot.y, bot.x + (b.x - d.x > 0 ? 1 : -1) * drop * 0.18, bot.y); c.lineTo(mid.x, mid.y); c.closePath(); c.fillStyle = f; c.fill(); // 袂
     c.strokeStyle = seam; c.lineWidth = Math.max(1, k.sw * 0.012); c.beginPath(); c.moveTo(d.x, d.y + aw * 0.6); c.lineTo(bot.x, bot.y - drop * 0.2); c.stroke();
@@ -521,7 +524,9 @@ function drawChar(c, sex, wear, look, view = {}) {
     if (view.casual) { line([{ x: A.x, y: A.y - H * 0.03 }, { x: A.x, y: A.y }], W * 0.072, "#fbfaf7"); ell(A.x + out * W * 0.012, A.y + H * 0.024, W * 0.05, H * 0.02, m ? "#3a5a8c" : "#e58aa3"); ell(A.x + out * W * 0.012, A.y + H * 0.038, W * 0.052, H * 0.008, "#fbfaf7"); }
     else { ell(A.x + out * W * 0.012, A.y + H * 0.04, W * 0.045, H * 0.012, "#8b2d2a"); ell(A.x + out * W * 0.01, A.y + H * 0.025, W * 0.035, H * 0.022, "#fbfaf7"); }
   }
-  for (const [s, e, w] of [[11, 13, 15], [12, 14, 16]]) line([P(s), P(e), P(w)], W * 0.06, SKIN);
+  // 袖のある物（長襦袢・着物・羽織）を着たら、袖の中の腕は描かない（袖口から肌がのぞかないように）
+  const sleeved = wear.some(x => x === "juban" || x === "kimono" || x === "haori");
+  if (!sleeved) for (const [s, e, w] of [[11, 13, 15], [12, 14, 16]]) line([P(s), P(e), P(w)], W * 0.06, SKIN);
   c.fillStyle = SKIN; c.fillRect(W * 0.465, H * 0.22, W * 0.07, H * 0.085);
   const torso = (y0, col) => shape([[Rs.x + W * 0.005, y0], [Ls.x - W * 0.005, y0], [Lh.x + W * 0.02, Lh.y + H * 0.03], [Rh.x - W * 0.02, Rh.y + H * 0.03]], col);
   if (view.casual) {
@@ -552,7 +557,7 @@ function drawChar(c, sex, wear, look, view = {}) {
   const layer = drawKimono(newCanvas, W, H, lm, { pattern: look.pattern, color: look.color, sex, wear, back }, null, null);
   if (layer) c.drawImage(layer, 0, 0);
   // 手
-  for (const [e, w] of [[13, 15], [14, 16]]) { const E = P(e), Wr = P(w); ell(Wr.x + (Wr.x - E.x) * 0.12, Wr.y + (Wr.y - E.y) * 0.12, W * 0.034, W * 0.038, SKIN); }
+  for (const [e, w] of [[13, 15], [14, 16]]) { const E = P(e), Wr = P(w); ell(Wr.x + (Wr.x - E.x) * 0.06, Wr.y + (Wr.y - E.y) * 0.06, W * 0.034, W * 0.038, SKIN); } // 袖口に重ねる
   // 頭
   const cy = H * 0.165, r = W * 0.115;
   const kanzashi = (x, y) => { for (let k = 0; k < 5; k++) { const a = k * 2 * Math.PI / 5 - 0.3; ell(x + Math.cos(a) * r * 0.17, y + Math.sin(a) * r * 0.17, r * 0.15, r * 0.1, "#d8434b", a); } ell(x, y, r * 0.07, r * 0.07, "#f2c45a"); };
@@ -596,8 +601,7 @@ function drawGame() {
   c.clearRect(0, 0, CHAR_W, CHAR_H); c.save(); c.translate(CHAR_W / 2, 0); c.scale(sx, 1); c.drawImage(off, -CHAR_W / 2, 0); c.restore();
 }
 // ---- 指の動き（キャラの上で指を動かして着せる）----
-// クイズ：正しい品物を選んだあと、その品物の動きをする。体験：本物の着付けの手順を、1 つずつ動きで体験する
-const ACTIONS = { hada: "down", juban: "down", kimono: "down", haori: "down", hakama: "up", date: "spin1", obi: "spin", kaku: "spin", obiage: "across", obijime: "tie", himo: "tie" };
+// 着付け体験：本物の着付けの手順を、1 つずつ指の動きで体験する
 const ACTION_MSG = {
   down: "肩から下へ、指でなぞって着せよう", up: "足もとから腰まで、なぞり上げてはかせよう",
   spin: "おなかのまわりを指でぐるぐる 2 周して巻こう", spin1: "おなかのまわりを 1 周して締めよう",
@@ -812,7 +816,7 @@ for (const [t, f] of [["pointerdown", actionDown], ["pointermove", actionMove], 
 let gameTimer;
 const swatch = id => { const col = COLORS.find(c => c.id === (state.game?.color || state.color)) || COLORS[0];
   return { hada: "#fbfaf7", juban: state.sex === "m" ? "#ece6dc" : "#f7eeea", kimono: col.base, date: "#e6d8e6", obi: col.obi, obiage: "#f0a7b8", obijime: "#d5373f", kaku: "#3b3230", hakama: "repeating-linear-gradient(90deg,#5f5b58 0 4px,#2c2a29 4px 5px)", haori: "#1f1b1a", himo: "#f4f1ea" }[id]; };
-const MODES = [{ id: "quiz", name: "順番クイズ", note: "品物を正しい順番で選んで着せる。早く、まちがえずに着せるほど高い評価。" },
+const MODES = [{ id: "quiz", name: "順番クイズ", note: "品物を正しい順番でタップして着せる。早く、まちがえずに着せるほど高い評価。" },
   { id: "real", name: "着付け体験", note: "本物の着付けの手順を、1 つずつ指で体験する。裾の長さや帯の締め具合で「仕上がり」の点が決まる。" }];
 const LEVEL_REAL = { easy: "合わせる幅が広い", normal: "ふつう", hard: "合わせる幅がせまい" };
 const bestKey = () => `ki_best_${state.mode === "real" ? "real_" : ""}${state.sex}_${state.level}`;
@@ -855,9 +859,11 @@ function startGame() {
 function stopGame() { clearInterval(gameTimer); state.game = null; drawGame(); renderGame(); }
 function tapItem(id) {
   const g = state.game; if (!g || g.mode !== "quiz" || g.done || g.worn.includes(id)) return;
-  if (g.action) { $("#gMsg").textContent = `先に${ITEMS[g.action.add].name}を仕上げよう。` + ACTION_MSG[g.action.type]; return; }
   const need = g.order[g.worn.length];
-  if (id === need) { g.hint = null; startAction(id, ACTIONS[id]); return; }
+  if (id === need) { // クイズは順番だけ：正しい品物を選べばすぐ着る（指の動きは着付け体験で）
+    g.worn.push(id); g.hint = null; $("#gMsg").textContent = `◯ ${ITEMS[id].name}を着せました`;
+    if (g.worn.length === g.order.length) return finishGame();
+    drawGame(); renderGame(); return; }
   if (g.level === "easy") g.hint = need;
   miss(g.level === "hard" ? "✕ ちがいます" : `✕ ${ITEMS[id].why}` + (g.level === "easy" ? `。次は「${ITEMS[need].name}」です` : ""));
   document.querySelector(`[data-item="${id}"]`)?.classList.add("ng");
@@ -871,7 +877,7 @@ function finishGame() {
     $("#gResult").textContent = [, "着られました！次はもっときれいに", "きれいに着付けられました！", "お見事！着付けの先生みたい"][stars] + `　仕上がり ${s}点（${t.toFixed(1)}秒）` + (record ? "　🎉 新記録" : "");
     $("#gOrder").textContent = "着付けの手順：" + g.steps.map(x => x.name).join(" → ") + "。「保存」で絵を残せます。";
   } else {
-    const per = t / g.order.length, stars = g.miss === 0 && per < 6 ? 3 : g.miss <= 1 && per < 10 ? 2 : 1;
+    const per = t / g.order.length, stars = g.miss === 0 && per < 3 ? 3 : g.miss <= 1 && per < 6 ? 2 : 1;
     const best = load(bestKey(), null), record = !best || t < best; if (record) store(bestKey(), t);
     $("#gStars").textContent = "★".repeat(stars) + "☆".repeat(3 - stars);
     $("#gResult").textContent = [, "もう少し！順番を覚えてもう一度", "上手に着せられました！", "お見事！着付け名人です"][stars]
