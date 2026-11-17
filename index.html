@@ -543,8 +543,10 @@ function drawChar(c, sex, wear, look, view = {}) {
       torso(Rs.y - H * 0.006, "#fbfaf7"); if (!back) ell(cx, Rs.y, W * 0.05, H * 0.02, SKIN);
       shape([[Rh.x - W * 0.025, Rh.y], [Lh.x + W * 0.025, Lh.y], [Lk.x + W * 0.04, Lk.y + H * 0.02], [cx + W * 0.008, Lk.y + H * 0.02], [cx, Lh.y + H * 0.06], [cx - W * 0.008, Rk.y + H * 0.02], [Rk.x - W * 0.04, Rk.y + H * 0.02]], "#f4f0e8"); }
     else { torso(Rs.y + H * 0.02, "#fdf7f2"); for (const S of [Ls, Rs]) line([{ x: S.x - (S.x - cx) * 0.25, y: S.y - H * 0.004 }, { x: S.x - (S.x - cx) * 0.3, y: Rs.y + H * 0.024 }], W * 0.01, "#fdf7f2"); // 肩ひも
-      shape([[Rh.x - W * 0.03, Rh.y], [Lh.x + W * 0.03, Lh.y], [Lk.x + W * 0.06, Lk.y], [Rk.x - W * 0.06, Rk.y]], "#fbf3ee");
-      for (let x = Rk.x - W * 0.055; x < Lk.x + W * 0.055; x += W * 0.03) ell(x + W * 0.015, Lk.y, W * 0.015, H * 0.008, "#fbf3ee"); } // すそのレース
+      // ペチコートは着物の身ごろより細くして、着物を着たときにはみ出さないようにする
+      const pl = Rk.x - W * 0.03, pr = Lk.x + W * 0.03;
+      shape([[Rh.x - W * 0.02, Rh.y], [Lh.x + W * 0.02, Lh.y], [pr, Lk.y], [pl, Lk.y]], "#fbf3ee");
+      for (let i = 0; i <= 6; i++) ell(pl + (pr - pl) * i / 6, Lk.y, W * 0.014, H * 0.007, "#fbf3ee"); } // すそのレース（左右そろえる）
   }
   // 着物
   const layer = drawKimono(newCanvas, W, H, lm, { pattern: look.pattern, color: look.color, sex, wear, back }, null, null);
