@@ -65,6 +65,8 @@ h1 em { font-style: normal; color: var(--shu); }
 .spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--shu); animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(1turn); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.posebtn { position: absolute; right: 12px; bottom: 12px; line-height: 1; }
+.photo.editing canvas { touch-action: none; }
 .hold { position: absolute; left: 12px; bottom: 12px; line-height: 1; }
 .panel { display: grid; gap: 16px; }
 .group { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: grid; gap: 10px; }
@@ -142,6 +144,7 @@ div.item .sw { width: 18px; height: 18px; }
         <canvas id="out"></canvas>
         <div class="busy" id="busy" hidden><div class="spin"></div><div id="busyText">準備しています…</div></div>
         <button class="btn hold" id="holdBtn" hidden>押している間は元の写真</button>
+        <button class="btn posebtn" id="poseBtn" data-act="pose" hidden>✋ 体の位置を直す</button>
       </div>
       <div class="panel">
         <div class="group"><h3>着せ方</h3><div class="seg" id="fits"></div><p class="note" id="fitNote"></p></div>
@@ -303,9 +306,10 @@ function kimonoShape(lm, W, H) {
   const sleeve = (S, Ei, Wi, out) => {
     let E = P(Ei), Wr = P(Wi);
     if (E.v < 0.3) E = add(add(S, down, sw * 0.8), side, out * sw * 0.2);
-    if (Wr.v < 0.3) Wr = add(E, { x: E.x - S.x, y: E.y - S.y }, 0.8);
+    const seen = Wr.v >= 0.3; // 手首が写っているか（写っていなければ、手を手前に残さない）
+    if (!seen) Wr = add(E, { x: E.x - S.x, y: E.y - S.y }, 0.8);
     const Wp = lerp(E, Wr, 0.78), drop = sw * 0.95, top = [add(S, side, -out * sw * 0.15), E, Wp];
-    return { top, drop, Wp, E, S, hand: Wr };
+    return { top, drop, Wp, E, S, hand: Wr, seen };
   };
   const sleeves = [sleeve(Ls, 13, 15, 1), sleeve(Rs, 14, 16, -1)];
   // 衿：首の付け根から胸元で合わせる。右前（着る人の左の衿が上）
@@ -334,7 +338,7 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
   const sharpMask = (small) => { const cv = newCanvas(W, H), x = cv.getContext("2d"); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high"; x.drawImage(small, 0, 0, W, H);
     const img = x.getImageData(0, 0, W, H), a = img.data; for (let i = 3; i < a.length; i += 4) a[i] = Math.max(0, Math.min(255, (a[i] - 128) * 4 + 128)); x.putImageData(img, 0, 0); return cv; };
   // 手として着物の手前に残す所：手首の近くで、しかも袖口より先（袖の中の腕は着物で隠す）
-  const handZone = (p, r = 1) => k.sleeves.some(s => { const dx = s.hand.x - s.E.x, dy = s.hand.y - s.E.y, l = Math.hypot(dx, dy) || 1;
+  const handZone = (p, r = 1) => k.sleeves.some(s => { if (!s.seen) return false; const dx = s.hand.x - s.E.x, dy = s.hand.y - s.E.y, l = Math.hypot(dx, dy) || 1;
     return Math.hypot(p.x - s.hand.x, p.y - s.hand.y) < hr * r && ((p.x - s.Wp.x) * dx + (p.y - s.Wp.y) * dy) / l > k.sw * 0.2; });
   const male = opts.sex === "m", back = !!opts.back, wear = opts.wear || (male ? WEAR.m : WEAR.f), has = id => wear.includes(id);
   const outer = has("kimono") || has("juban"); if (!outer && !has("hada")) return null;
@@ -576,7 +580,7 @@ addEventListener("popstate", () => { if ($("#home").hidden) show("home"); });
 
 // 体の位置と、髪・顔・肌の場所を見つける AI（Google MediaPipe。端末の中で動く。初めてのときに約30MBを読み込む）
 const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
-const POSE_MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+const POSE_MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
 const SEG_MODEL = "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite";
 let aiLoading = null;
 function loadAI() {
@@ -604,18 +608,58 @@ function busy(text) { $("#busy").hidden = !text; if (text) $("#busyText").textCo
 function render() {
   const out = $("#out"), { W, H } = state; if (!W) return;
   $(".panel").classList.toggle("face", state.fit === "face");
-  if (state.fit === "face") return renderFace();
+  if (state.fit === "face") { $("#poseBtn").hidden = true; state.lmEdit = false; $(".photo").classList.remove("editing"); $("#holdBtn").style.visibility = ""; return renderFace(); }
   out.width = W; out.height = H; const c = out.getContext("2d"); c.drawImage(state.photo, 0, 0);
   state.found = !!kimonoShape(state.lm, W, H);
   const fabric = fabricOf(state.pattern), color = fabricColor(state.pattern), key = `${state.pattern}/${state.sex}/${fabric ? 1 : 0}`; // 同じ柄・色なら描き直さない（長押しで比べるときなど）
-  if (state.layerKey !== key || state.layerPhoto !== state.photo) { state.layer = state.found ? drawKimono(newCanvas, W, H, state.lm, { pattern: state.pattern, color, sex: state.sex, fabric }, state.photo, state.seg) : null; state.layerKey = key; state.layerPhoto = state.photo; state.ai = null; }
+  if (state.layerKey !== key + "/" + (state.lmVer || 0) || state.layerPhoto !== state.photo) { state.layer = state.found ? drawKimono(newCanvas, W, H, state.lm, { pattern: state.pattern, color, sex: state.sex, fabric }, state.photo, state.seg) : null; state.layerKey = key + "/" + (state.lmVer || 0); state.layerPhoto = state.photo; state.ai = null; }
   const layer = state.layer;
   state.result = !!layer; $("#holdBtn").hidden = !layer; $("#aiBtn").disabled = !layer || !!state.aiBusy;
   if (layer) { c.save(); c.shadowColor = "rgba(0,0,0,.28)"; c.shadowBlur = Math.round(Math.min(W, H) * 0.012); c.shadowOffsetY = Math.round(Math.min(W, H) * 0.004); c.drawImage(layer, 0, 0); c.restore(); } // 着物の落とす影
   if (layer && state.ai) c.drawImage(state.ai.patch, state.ai.x, state.ai.y); // AI で描き直した着物
+  if (state.lmEdit) drawPoseDots(c);
+  $("#poseBtn").hidden = !state.lm; $("#poseBtn").textContent = state.lmEdit ? "✓ 直し終わる" : "✋ 体の位置を直す";
   $("#note").textContent = !state.found ? (state.lm !== undefined ? "人が見つかりませんでした。正面を向いて、肩と腰が写るように撮ってみてください。" : "")
     : state.ai ? "AI で描き直しました。柄や色を変えると、元の絵にもどります。" : layer ? "写真を長押し（または左下のボタン）で、元の写真と比べられます。" : "";
 }
+// ---------- 体の位置（AI の判定を整える・指で直す）----------
+const POSE_PTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28], POSE_BONES = [[11, 12], [11, 13], [13, 15], [12, 14], [14, 16], [11, 23], [12, 24], [23, 24], [23, 25], [25, 27], [24, 26], [26, 28]];
+// あやしい点は「見えていない」にする：写真の外の点、自信の低い点、ありえない長さの腕・脚
+function cleanPose(lm) {
+  if (!lm) return null; const L = lm.map(p => ({ ...p })), out = p => p.x < -0.02 || p.x > 1.02 || p.y < -0.02 || p.y > 1.02;
+  for (const i of POSE_PTS) { const p = L[i]; if (out(p) || (p.visibility ?? 1) < (i <= 12 || i === 23 || i === 24 ? 0.3 : 0.5)) p.visibility = 0; }
+  const d = (a, b) => Math.hypot(L[a].x - L[b].x, L[a].y - L[b].y), sw = d(11, 12) || 0.1;
+  for (const [s, e, w] of [[11, 13, 15], [12, 14, 16]]) { if (L[e].visibility && d(s, e) > sw * 2.2) L[e].visibility = L[w].visibility = 0; if (L[w].visibility && (!L[e].visibility || d(e, w) > sw * 2)) L[w].visibility = 0; }
+  for (const [h, k, a] of [[23, 25, 27], [24, 26, 28]]) { if (L[k].visibility && d(h, k) > sw * 3.5) L[k].visibility = L[a].visibility = 0; if (L[a].visibility && (!L[k].visibility || d(k, a) > sw * 3.5)) L[a].visibility = 0; }
+  return L;
+}
+// 直すときに点を置く場所（見えていない点は、体の形から自然な位置を出す）
+function posePos(i) {
+  const { W, H } = state, p = state.lm[i]; if (p.visibility) return { x: p.x * W, y: p.y * H };
+  const k = kimonoShape(state.lm, W, H); if (!k) return { x: Math.min(W - 10, Math.max(10, p.x * W)), y: Math.min(H - 10, Math.max(10, p.y * H)) };
+  const s = k.sleeves[i % 2 ? 0 : 1], at = (q) => ({ x: Math.min(W - 10, Math.max(10, q.x)), y: Math.min(H - 10, Math.max(10, q.y)) });
+  if (i === 13 || i === 14) return at(s.E); if (i === 15 || i === 16) return at(s.hand);
+  const hip = i % 2 ? 23 : 24, hp = state.lm[hip].visibility ? { x: state.lm[hip].x * W, y: state.lm[hip].y * H } : { x: k.hm.x + (i % 2 ? 1 : -1) * k.hipW * 0.3, y: k.hm.y };
+  if (i === 23 || i === 24) return at(hp); if (i === 25 || i === 26) return at({ x: hp.x, y: hp.y + k.sw * 1.6 }); return at({ x: hp.x, y: hp.y + k.sw * 3.2 });
+}
+function drawPoseDots(c) {
+  const r = Math.max(9, Math.min(state.W, state.H) * 0.022), P = POSE_PTS.reduce((o, i) => (o[i] = posePos(i), o), {});
+  c.save(); c.lineCap = "round"; c.lineWidth = r * 0.35; c.strokeStyle = "rgba(255,255,255,.8)";
+  for (const [a, b] of POSE_BONES) { c.beginPath(); c.moveTo(P[a].x, P[a].y); c.lineTo(P[b].x, P[b].y); c.stroke(); }
+  for (const i of POSE_PTS) { c.beginPath(); c.arc(P[i].x, P[i].y, r, 0, 7); c.fillStyle = state.lm[i].visibility ? "#c8323b" : "rgba(160,160,160,.85)"; c.fill(); c.lineWidth = r * 0.3; c.strokeStyle = "#fff"; c.stroke(); }
+  c.restore();
+}
+(() => {
+  const cv = $("#out"); let drag = null;
+  const at = e => { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) * state.W / b.width, y: (e.clientY - b.top) * state.H / b.height }; };
+  cv.addEventListener("pointerdown", e => { if (!state.lmEdit || state.fit === "face") return; const q = at(e), r = Math.max(9, Math.min(state.W, state.H) * 0.022) * 3.5;
+    let best = null, bd = r; for (const i of POSE_PTS) { const p = posePos(i), dd = Math.hypot(p.x - q.x, p.y - q.y); if (dd < bd) { bd = dd; best = i; } }
+    if (best === null) return; e.preventDefault(); e.stopImmediatePropagation(); drag = best; cv.setPointerCapture?.(e.pointerId); }, true);
+  cv.addEventListener("pointermove", e => { if (drag === null) return; e.preventDefault(); const q = at(e), p = state.lm[drag];
+    p.x = q.x / state.W; p.y = q.y / state.H; p.visibility = 1;
+    const c = cv.getContext("2d"); c.drawImage(state.photo, 0, 0); if (state.layer) { c.globalAlpha = 0.45; c.drawImage(state.layer, 0, 0); c.globalAlpha = 1; } drawPoseDots(c); }); // 動かしている間は軽く
+  for (const t of ["pointerup", "pointercancel"]) cv.addEventListener(t, () => { if (drag === null) return; drag = null; state.lmVer = (state.lmVer || 0) + 1; render(); });
+})();
 // ---------- お店の布（きもの庵なご様の着物の写真。許可をいただいて使っている）----------
 // color = 帯などの色（COLORS の id）。布に合う色を決めておく
 const FABRICS = [
@@ -1149,7 +1193,7 @@ $("#photoIn").addEventListener("change", async e => {
     const ai = await loadAI();
     busy("体の位置を探しています…");
     await new Promise(r => setTimeout(r, 30));
-    const p = ai.pose.detect(photo); state.lm = p.landmarks?.[0] || null;
+    const p = ai.pose.detect(photo); state.lm = cleanPose(p.landmarks?.[0] || null); state.lmVer = 0; state.lmEdit = false;
     if (ai.seg) { const r = ai.seg.segment(photo); const m = r.categoryMask; if (m) { state.seg = { mask: m.getAsUint8Array().slice(), w: m.width, h: m.height }; m.close(); } r.close?.(); }
     busy(""); render();
   } catch (err) { console.warn(err); busy(""); toast("うまく読み込めませんでした（電波を確認してください）"); }
@@ -1171,6 +1215,8 @@ document.addEventListener("click", async e => {
     case "turn": setBack(!turn.back); break;
     case "openGame": show("game"); renderChips(); drawGame(); renderGame(); break;
     case "gameStart": startGame(); break;
+    case "pose": state.lmEdit = !state.lmEdit; $(".photo").classList.toggle("editing", state.lmEdit); $("#holdBtn").style.visibility = state.lmEdit ? "hidden" : "";
+      if (state.lmEdit) toast("点を指で動かして、肩・ひじ・手首・腰・ひざ・足首に合わせてください"); render(); break;
     case "stepGo": stepGo(); break;
     case "ai": aiRealize(); break;
     case "gameQuit": stopGame(); break;
@@ -1190,7 +1236,7 @@ document.addEventListener("click", async e => {
 });
 // 長押し・ボタンを押している間は元の写真
 (() => {
-  const show = on => { if (!state.photo || !state.result) return; const c = $("#out").getContext("2d"); if (on) c.drawImage(state.fit === "face" && state.tpl ? state.tpl.cv : state.photo, 0, 0); else render(); };
+  const show = on => { if (!state.photo || !state.result || state.lmEdit) return; const c = $("#out").getContext("2d"); if (on) c.drawImage(state.fit === "face" && state.tpl ? state.tpl.cv : state.photo, 0, 0); else render(); };
   for (const el of [$("#out"), $("#holdBtn")]) {
     el.addEventListener("pointerdown", e => { e.preventDefault(); show(true); });
     for (const t of ["pointerup", "pointercancel", "pointerleave"]) el.addEventListener(t, () => show(false));
