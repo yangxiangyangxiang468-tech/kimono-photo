@@ -5,7 +5,8 @@
 // ・送られた写真は保存しない
 const MODEL = "@cf/runwayml/stable-diffusion-v1-5-inpainting";
 const ORIGINS = ["https://yangxiangyangxiang468-tech.github.io"];
-const PATTERNS = { asanoha: "hemp leaf (asanoha) geometric", seigaiha: "wave (seigaiha)", sakura: "cherry blossom (sakura) floral", yagasuri: "arrow feather (yagasuri)", ichimatsu: "checkered (ichimatsu)" };
+const PATTERNS = { asanoha: "hemp leaf (asanoha) geometric", seigaiha: "wave (seigaiha)", sakura: "cherry blossom (sakura) floral", yagasuri: "arrow feather (yagasuri)", ichimatsu: "checkered (ichimatsu)",
+  "shop-green": "deep green silk with large white and gold peony flowers", "shop-white": "ivory silk with pastel flowers, maple leaves and gold accents", "shop-red": "crimson red silk with white plum blossom (ume) dots" };
 const COLORS = { shu: "vermilion red", kon: "navy blue", momo: "pink", moegi: "green", fuji: "wisteria purple", sumi: "black" };
 const MAX_BYTES = 3 * 1024 * 1024;
 
@@ -25,7 +26,8 @@ export default {
     if (!(image instanceof File) || !(mask instanceof File) || image.size > MAX_BYTES || mask.size > MAX_BYTES) return fail("bad image", 400);
     if (!(width >= 256 && width <= 768 && height >= 256 && height <= 768 && width % 8 === 0 && height % 8 === 0)) return fail("bad size", 400);
     const strength = Math.max(0.3, Math.min(0.6, Number(form.get("strength")) || 0.45));
-    const prompt = `photograph of a ${male ? "man" : "woman"} wearing a traditional Japanese ${male ? "kimono" : "silk furisode kimono"}, ${color} fabric with ${pattern} pattern, `
+    const shop = String(form.get("pattern")).startsWith("shop-"); // お店の布は、布そのものの色で
+    const prompt = `photograph of a ${male ? "man" : "woman"} wearing a traditional Japanese ${male ? "kimono" : "silk furisode kimono"}, ${shop ? pattern : `${color} fabric with ${pattern} pattern`}, `
       + "realistic silk texture, natural fabric folds and drapes, soft natural lighting, high detail, DSLR photo";
     const negative_prompt = "cartoon, illustration, drawing, anime, flat colors, painting, 3d render, deformed, blurry, low quality, text, watermark";
     try {

@@ -81,6 +81,9 @@ h1 em { font-style: normal; color: var(--shu); }
 .photo.stage canvas { width: auto; max-width: 100%; max-height: min(52vh, 640px); }
 @media (min-width: 820px) { .photo.stage canvas { max-height: min(78vh, 640px); } }
 .turn { position: absolute; right: 10px; bottom: 10px; line-height: 1; padding: 8px 12px; font-size: 13px; background: rgba(255,250,243,.92); }
+.panel.face .draw-only { display: none; }
+.chip .tag { font-size: 10px; color: var(--shu); line-height: 1; }
+.chip img { width: 54px; height: 40px; object-fit: cover; border-radius: 6px; display: block; }
 .panel.playing .no-play { display: none; }
 .game { border-color: var(--gold); }
 .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; }
@@ -133,11 +136,12 @@ div.item .sw { width: 18px; height: 18px; }
         <button class="btn hold" id="holdBtn" hidden>押している間は元の写真</button>
       </div>
       <div class="panel">
-        <div class="group no-play"><h3>着る人</h3><div class="seg" id="sexes"></div></div>
-        <div class="group"><h3>柄</h3><div class="chips" id="patterns"></div></div>
-        <div class="group"><h3>色</h3><div class="chips" id="colors"></div></div>
+        <div class="group"><h3>着せ方</h3><div class="seg" id="fits"></div><p class="note" id="fitNote"></p></div>
+        <div class="group no-play draw-only"><h3>着る人</h3><div class="seg" id="sexes"></div></div>
+        <div class="group draw-only"><h3>柄</h3><div class="chips" id="patterns"></div><p class="note">「お店」の柄は、きもの庵なご様の着物の布です（許可をいただいて使っています）。</p></div>
+        <div class="group draw-only"><h3>色</h3><div class="chips" id="colors"></div></div>
         <div class="btns"><button class="btn primary" data-act="save">保存</button><button class="btn" data-act="share">送る</button></div>
-        <div class="group"><h3>✨ AIでリアルに</h3><p class="note">着物の所だけ、AI が写真らしい布に描き直します（10 秒ほど・無料・1 日に使える回数に限りあり）。押したときだけ写真を AI（Cloudflare）に送ります。送った写真は保存されません。</p>
+        <div class="group draw-only"><h3>✨ AIでリアルに</h3><p class="note">着物の所だけ、AI が写真らしい布に描き直します（10 秒ほど・無料・1 日に使える回数に限りあり）。押したときだけ写真を AI（Cloudflare）に送ります。送った写真は保存されません。</p>
           <div class="btns"><button class="btn" data-act="ai" id="aiBtn" disabled>✨ AIで描き直す</button></div></div>
         <p class="note" id="note"></p>
       </div>
@@ -218,6 +222,12 @@ const ORDERS = {
 };
 const WEAR = { f: ORDERS.f.normal, m: ["juban", "kimono", "kaku"] }; // 写真モードで着せる一式
 // 柄の 1 枚分（size × size）を描く。newCanvas(w, h) はキャンバスを作る関数（ブラウザでも node でも）
+// お店の布の写真を柄にする：写真を左右・上下に反転させて 2×2 に並べ、つなぎ目が目立たないくり返しにする（w = 写真 1 枚分の幅）
+function fabricTile(newCanvas, img, w) {
+  const iw = img.width || img.naturalWidth, ih = img.height || img.naturalHeight, h = Math.max(1, Math.round(w * ih / iw)), cv = newCanvas(w * 2, h * 2), c = cv.getContext("2d");
+  for (const [sx, sy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) { c.save(); c.translate(sx < 0 ? w * 2 : 0, sy < 0 ? h * 2 : 0); c.scale(sx, sy); c.drawImage(img, 0, 0, w, h); c.restore(); }
+  return cv;
+}
 function patternTile(newCanvas, id, size, base, accent) {
   const cv = newCanvas(size, size), c = cv.getContext("2d"), s = size;
   c.fillStyle = base; c.fillRect(0, 0, s, s);
@@ -296,11 +306,12 @@ function kimonoShape(lm, W, H) {
 // 着物を描いた層（写真と同じ大きさ、着物の所だけ色がある）を返す。
 // photo: 写真のキャンバス（ぼかした明るさを着物に写して、しわや影をなじませる）。
 // seg: { mask: 1 点ごとの種類, w, h }（0 = 背景、1 = 髪、2 = 肌、3 = 顔、4 = 服、5 = 小物）。着ている服と腕・脚をまるごと着物で覆い、顔・髪・手は手前に残す
-// opts: { pattern, color, sex: "f" | "m", back: 後ろ姿, wear: 着ている物の id の配列（着付けゲーム用。無ければ WEAR のふだんの一式）}
+// opts: { pattern, color, fabric: お店の布の写真（あれば柄の代わりに使う）, sex: "f" | "m", back: 後ろ姿, wear: 着ている物の id の配列（着付けゲーム用。無ければ WEAR のふだんの一式）}
 function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
   const k = kimonoShape(lm, W, H); if (!k) return null;
   const col = COLORS.find(c => c.id === opts.color) || COLORS[0], layer = newCanvas(W, H), c = layer.getContext("2d");
-  const tile = patternTile(newCanvas, opts.pattern, Math.max(16, Math.round(k.sw * (photo ? 0.3 : 0.42))), col.base, col.accent), pat = c.createPattern(tile, "repeat");
+  const tile = opts.fabric ? fabricTile(newCanvas, opts.fabric, Math.max(32, Math.round(k.sw * 1.8))) // お店の布（opts.fabric = 布の写真）
+    : patternTile(newCanvas, opts.pattern, Math.max(16, Math.round(k.sw * (photo ? 0.3 : 0.42))), col.base, col.accent), pat = c.createPattern(tile, "repeat");
   const poly = (ctx, pts, fill) => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); };
   const add = (a, b, f = 1) => ({ x: a.x + b.x * f, y: a.y + b.y * f }), seam = "rgba(0,0,0,.22)";
   const below = (p, from, dist = 0) => (p.x - from.x) * k.down.x + (p.y - from.y) * k.down.y > dist; // 首より下か
@@ -583,7 +594,7 @@ function loadAI() {
 }
 
 const state = { photo: null, W: 0, H: 0, data: null, lm: null, seg: null, pattern: load("ki_pattern", "asanoha"), color: load("ki_color", "shu"), result: null,
-  sex: load("ki_sex", "f"), level: load("ki_level", "normal"), mode: load("ki_mode", "quiz"), found: false, game: null };
+  sex: load("ki_sex", "f"), level: load("ki_level", "normal"), mode: load("ki_mode", "quiz"), fit: load("ki_fit", "draw"), found: false, game: null };
 const SEXES = [{ id: "f", name: "女の人" }, { id: "m", name: "男の人" }];
 const LEVELS = [
   { id: "easy", name: "簡単", note: "3つの品物。まちがえると次の品物を教えてくれます。" },
@@ -594,16 +605,70 @@ const PENALTY = { easy: 0, normal: 3, hard: 5 };
 function busy(text) { $("#busy").hidden = !text; if (text) $("#busyText").textContent = text; }
 function render() {
   const out = $("#out"), { W, H } = state; if (!W) return;
+  $(".panel").classList.toggle("face", state.fit === "face");
+  if (state.fit === "face") return renderFace();
   out.width = W; out.height = H; const c = out.getContext("2d"); c.drawImage(state.photo, 0, 0);
   state.found = !!kimonoShape(state.lm, W, H);
-  const key = `${state.pattern}/${state.color}/${state.sex}`; // 同じ柄・色なら描き直さない（長押しで比べるときなど）
-  if (state.layerKey !== key || state.layerPhoto !== state.photo) { state.layer = state.found ? drawKimono(newCanvas, W, H, state.lm, { pattern: state.pattern, color: state.color, sex: state.sex }, state.photo, state.seg) : null; state.layerKey = key; state.layerPhoto = state.photo; state.ai = null; }
+  const fabric = fabricOf(state.pattern), key = `${state.pattern}/${state.color}/${state.sex}/${fabric ? 1 : 0}`; // 同じ柄・色なら描き直さない（長押しで比べるときなど）
+  if (state.layerKey !== key || state.layerPhoto !== state.photo) { state.layer = state.found ? drawKimono(newCanvas, W, H, state.lm, { pattern: state.pattern, color: state.color, sex: state.sex, fabric }, state.photo, state.seg) : null; state.layerKey = key; state.layerPhoto = state.photo; state.ai = null; }
   const layer = state.layer;
   state.result = !!layer; $("#holdBtn").hidden = !layer; $("#aiBtn").disabled = !layer || !!state.aiBusy;
   if (layer) { c.save(); c.shadowColor = "rgba(0,0,0,.28)"; c.shadowBlur = Math.round(Math.min(W, H) * 0.012); c.shadowOffsetY = Math.round(Math.min(W, H) * 0.004); c.drawImage(layer, 0, 0); c.restore(); } // 着物の落とす影
   if (layer && state.ai) c.drawImage(state.ai.patch, state.ai.x, state.ai.y); // AI で描き直した着物
   $("#note").textContent = !state.found ? (state.lm !== undefined ? "人が見つかりませんでした。正面を向いて、肩と腰が写るように撮ってみてください。" : "")
     : state.ai ? "AI で描き直しました。柄や色を変えると、元の絵にもどります。" : layer ? "写真を長押し（または左下のボタン）で、元の写真と比べられます。" : "";
+}
+// ---------- お店の布（きもの庵なご様の着物の写真。許可をいただいて使っている）----------
+const FABRICS = [{ id: "shop-green", name: "緑の牡丹", src: "shop/fabric-green.jpg" }, { id: "shop-white", name: "白の花づくし", src: "shop/fabric-white.jpg" }, { id: "shop-red", name: "赤の梅", src: "shop/fabric-red.jpg" }];
+const fabricImg = {}, fabricOf = id => fabricImg[id] || null;
+for (const f of FABRICS) { const i = new Image(); i.onload = () => { fabricImg[f.id] = i; if (state.pattern === f.id) render(); }; i.src = f.src; }
+// ---------- お店の振袖に顔をはめる ----------
+// お店のモデル写真（振袖）を土台にして、撮った写真の顔をはめる。着物・髪・手はモデル写真のまま。
+// 目の位置を合わせて写真を回転・拡大し、モデルの顔の肌の所だけ入れかえる。明るさと色はモデル写真に近づけてなじませる
+const FITS = [{ id: "draw", name: "着物を描く", note: "写真の人に、選んだ柄・色の着物を描いて着せます。" },
+  { id: "face", name: "お店の振袖に顔をはめる", note: "きもの庵なご様の振袖のモデル写真に、写真の顔をはめます（モデル写真は許可をいただいて使っています）。正面を向いた写真がきれいにできます。" }];
+let tplLoading = null;
+function loadTemplate() {
+  if (!tplLoading) tplLoading = (async () => {
+    const im = await new Promise((ok, ng) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ng; i.src = "shop/furisode-model.jpg"; });
+    const W = im.naturalWidth * 2, H = im.naturalHeight * 2, cv = newCanvas(W, H), x = cv.getContext("2d"); x.imageSmoothingQuality = "high"; x.drawImage(im, 0, 0, W, H);
+    const ai = await loadAI(), lm = ai.pose.detect(cv).landmarks?.[0] || null; let seg = null;
+    if (ai.seg) { const r = ai.seg.segment(cv), m = r.categoryMask; if (m) { seg = { mask: m.getAsUint8Array().slice(), w: m.width, h: m.height }; m.close(); } r.close?.(); }
+    state.tpl = { cv, W, H, lm, seg };
+  })().catch(e => { tplLoading = null; throw e; });
+  return tplLoading;
+}
+const eyesOf = (lm, W, H) => lm && lm[2] && lm[5] && (lm[2].visibility ?? 1) > 0.3 && (lm[5].visibility ?? 1) > 0.3 ? [{ x: lm[2].x * W, y: lm[2].y * H }, { x: lm[5].x * W, y: lm[5].y * H }] : null;
+function renderFace() {
+  const out = $("#out"), T = state.tpl;
+  $("#aiBtn").disabled = true;
+  if (!T) { busy("お店の振袖を準備しています…"); loadTemplate().then(() => { busy(""); render(); }).catch(e => { console.warn(e); busy(""); toast("お店の振袖を読み込めませんでした"); }); return; }
+  out.width = T.W; out.height = T.H; const c = out.getContext("2d"); c.drawImage(T.cv, 0, 0);
+  const U = eyesOf(state.lm, state.W, state.H), V = eyesOf(T.lm, T.W, T.H);
+  state.result = false; $("#holdBtn").hidden = true;
+  if (!U || !V || !T.seg) { $("#note").textContent = state.lm === undefined ? "" : "顔が見つかりませんでした。正面を向いて、顔がはっきり写った写真で試してください。"; return; }
+  // 目の位置を合わせる（回転・拡大・移動）
+  const mid = P => ({ x: (P[0].x + P[1].x) / 2, y: (P[0].y + P[1].y) / 2 }), len = P => Math.hypot(P[1].x - P[0].x, P[1].y - P[0].y), ang = P => Math.atan2(P[1].y - P[0].y, P[1].x - P[0].x);
+  const um = mid(U), vm = mid(V), sc = len(V) / len(U), rot = ang(V) - ang(U);
+  const F = newCanvas(T.W, T.H), fc = F.getContext("2d"); fc.imageSmoothingQuality = "high";
+  fc.translate(vm.x, vm.y); fc.rotate(rot); fc.scale(sc, sc); fc.translate(-um.x, -um.y); fc.drawImage(state.photo, 0, 0); fc.setTransform(1, 0, 0, 1, 0, 0);
+  // 入れかえる場所 = モデルの顔の肌（手や髪は残す）。小さく作って広げ、ふちをなめらかに
+  const sm = newCanvas(T.seg.w, T.seg.h), smc = sm.getContext("2d"), id = smc.createImageData(T.seg.w, T.seg.h);
+  for (let i = 0; i < T.seg.mask.length; i++) if (T.seg.mask[i] === 3) id.data[i * 4 + 3] = 255;
+  smc.putImageData(id, 0, 0);
+  const M = newCanvas(T.W, T.H), mc = M.getContext("2d"); mc.imageSmoothingEnabled = true; mc.imageSmoothingQuality = "high"; mc.drawImage(sm, 0, 0, T.W, T.H);
+  // 明るさと色をモデル写真に近づける（顔の中の平均と散らばりを合わせる。6 割だけ寄せて、本人らしさを残す）
+  const fd = fc.getImageData(0, 0, T.W, T.H), f = fd.data, t = c.getImageData(0, 0, T.W, T.H).data, md = mc.getImageData(0, 0, T.W, T.H).data;
+  const st = [0, 1, 2].map(() => ({ su: 0, qu: 0, st: 0, qt: 0 })); let n = 0;
+  for (let i = 0; i < md.length; i += 4) if (md[i + 3] > 200 && f[i + 3] > 0) { n++; for (let ch = 0; ch < 3; ch++) { const a = f[i + ch], b = t[i + ch]; st[ch].su += a; st[ch].qu += a * a; st[ch].st += b; st[ch].qt += b * b; } }
+  if (n < 50) { $("#note").textContent = "顔の位置をうまく合わせられませんでした。別の写真で試してください。"; return; }
+  const adj = st.map(o => { const mu = o.su / n, mt = o.st / n, su = Math.sqrt(Math.max(1, o.qu / n - mu * mu)), stt = Math.sqrt(Math.max(1, o.qt / n - mt * mt)); return { mu, mt, k: Math.max(0.7, Math.min(1.4, stt / su)) }; });
+  for (let i = 0; i < f.length; i += 4) { if (!md[i + 3]) { f[i + 3] = 0; continue; }
+    for (let ch = 0; ch < 3; ch++) { const a = adj[ch], v = a.mt + (f[i + ch] - a.mu) * a.k; f[i + ch] = Math.max(0, Math.min(255, f[i + ch] * 0.4 + v * 0.6)); }
+    f[i + 3] = f[i + 3] ? md[i + 3] : 0; }
+  fc.putImageData(fd, 0, 0); c.drawImage(F, 0, 0);
+  state.result = true; $("#holdBtn").hidden = false;
+  $("#note").textContent = "写真を長押し（または左下のボタン）で、元のモデル写真と比べられます。";
 }
 // ---------- AIでリアルに ----------
 // アプリが描いた着物入りの写真と、着物の場所（マスク）を中継（Cloudflare Workers、ai-worker/）に送り、Stable Diffusion で着物の所だけ写真らしく描き直してもらう。
@@ -1028,7 +1093,10 @@ function finishGame() {
 }
 function renderChips() {
   const col = COLORS.find(c => c.id === state.color) || COLORS[0];
-  $("#patterns").innerHTML = PATTERNS.map(p => `<button class="chip ${p.id === state.pattern ? "on" : ""}" data-pattern="${p.id}"><canvas width="108" height="80"></canvas>${p.name}</button>`).join("");
+  $("#patterns").innerHTML = PATTERNS.map(p => `<button class="chip ${p.id === state.pattern ? "on" : ""}" data-pattern="${p.id}"><canvas width="108" height="80"></canvas>${p.name}</button>`).join("")
+    + FABRICS.map(f => `<button class="chip ${f.id === state.pattern ? "on" : ""}" data-pattern="${f.id}"><img src="${f.src}" alt=""><span class="tag">お店</span>${f.name}</button>`).join("");
+  $("#fits").innerHTML = FITS.map(x => `<button class="chip ${x.id === state.fit ? "on" : ""}" data-fit="${x.id}">${x.name}</button>`).join("");
+  $("#fitNote").textContent = FITS.find(x => x.id === state.fit).note;
   document.querySelectorAll("#patterns canvas").forEach((cv, i) => { const x = cv.getContext("2d"); x.fillStyle = x.createPattern(patternTile(newCanvas, PATTERNS[i].id, 40, col.base, col.accent), "repeat"); x.fillRect(0, 0, cv.width, cv.height); });
   $("#sexes").innerHTML = $("#gSexes").innerHTML = SEXES.map(x => `<button class="chip ${x.id === state.sex ? "on" : ""}" data-sex="${x.id}">${x.name}</button>`).join("");
   $("#colors").innerHTML = COLORS.map(c => `<button class="chip ${c.id === state.color ? "on" : ""}" data-color="${c.id}"><span class="dot" style="background:${c.base}"></span>${c.name}</button>`).join("");
@@ -1054,7 +1122,8 @@ $("#photoIn").addEventListener("change", async e => {
   finally { setTimeout(() => URL.revokeObjectURL(url), 5000); }
 });
 document.addEventListener("click", async e => {
-  const el = e.target.closest("[data-pattern],[data-color],[data-act],[data-sex],[data-level],[data-item],[data-mode]"); if (!el) return;
+  const el = e.target.closest("[data-pattern],[data-color],[data-act],[data-sex],[data-level],[data-item],[data-mode],[data-fit]"); if (!el) return;
+  if (el.dataset.fit) { state.fit = el.dataset.fit; store("ki_fit", state.fit); renderChips(); render(); return; }
   if (el.dataset.mode) { state.mode = el.dataset.mode; store("ki_mode", state.mode); renderGame(); return; }
   if (el.dataset.item) { tapItem(el.dataset.item); return; }
   if (el.dataset.sex) { state.sex = el.dataset.sex; store("ki_sex", state.sex); renderChips(); render(); drawGame(); renderGame(); return; }
@@ -1085,7 +1154,7 @@ document.addEventListener("click", async e => {
 });
 // 長押し・ボタンを押している間は元の写真
 (() => {
-  const show = on => { if (!state.photo || !state.result) return; const c = $("#out").getContext("2d"); if (on) c.drawImage(state.photo, 0, 0); else render(); };
+  const show = on => { if (!state.photo || !state.result) return; const c = $("#out").getContext("2d"); if (on) c.drawImage(state.fit === "face" && state.tpl ? state.tpl.cv : state.photo, 0, 0); else render(); };
   for (const el of [$("#out"), $("#holdBtn")]) {
     el.addEventListener("pointerdown", e => { e.preventDefault(); show(true); });
     for (const t of ["pointerup", "pointercancel", "pointerleave"]) el.addEventListener(t, () => show(false));
