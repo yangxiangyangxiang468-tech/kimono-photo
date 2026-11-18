@@ -80,6 +80,13 @@ h1 em { font-style: normal; color: var(--shu); }
 .stage { display: grid; place-items: center; background: radial-gradient(ellipse at 50% 95%, #e2d3c0 0 18%, transparent 19%), linear-gradient(#f3e9dc, #eadcca); }
 .photo.stage canvas { width: auto; max-width: 100%; max-height: min(52vh, 640px); }
 @media (min-width: 820px) { .photo.stage canvas { max-height: min(78vh, 640px); } }
+.stepcard { position: absolute; inset: 0; z-index: 5; display: grid; align-content: center; justify-items: center; gap: 10px; padding: 20px; text-align: center; line-height: 1.6;
+  background: rgba(246,239,230,.95); }
+.sc-no { font-weight: 700; color: var(--shu); font-size: 15px; letter-spacing: .1em; }
+.sc-name { font-family: var(--f-title); font-weight: 800; font-size: clamp(26px, 7vw, 36px); line-height: 1.25; }
+.sc-icon { font-size: 52px; line-height: 1.1; }
+.sc-how { margin: 0; font-size: 16px; font-weight: 700; max-width: 22em; }
+.sc-note { margin: 0; font-size: 12px; color: var(--muted); }
 .turn { position: absolute; right: 10px; bottom: 10px; line-height: 1; padding: 8px 12px; font-size: 13px; background: rgba(255,250,243,.92); }
 .panel.face .draw-only { display: none; }
 .chip .tag { font-size: 10px; color: var(--shu); line-height: 1; }
@@ -154,7 +161,9 @@ div.item .sw { width: 18px; height: 18px; }
   <div class="wrap">
     <div class="btns"><button class="btn quiet" data-act="back">← もどる</button></div>
     <div class="studio">
-      <div class="photo stage"><canvas id="gcv" width="360" height="640"></canvas><button class="btn turn" id="turnBtn" data-act="turn">↻ 後ろを見る</button></div>
+      <div class="photo stage"><canvas id="gcv" width="360" height="640"></canvas><button class="btn turn" id="turnBtn" data-act="turn">↻ 後ろを見る</button>
+        <div class="stepcard" id="stepCard" hidden><div class="sc-no" id="scNo"></div><div class="sc-name" id="scName"></div><div class="sc-icon" id="scIcon"></div><p class="sc-how" id="scHow"></p>
+          <button class="btn primary big" data-act="stepGo">はじめる</button><p class="sc-note">⏸ 説明を読んでいる間は、タイマーは止まっています</p></div></div>
       <div class="panel" id="gPanel">
         <div class="group no-play"><h3>着せる人</h3><div class="seg" id="gSexes"></div></div>
         <div class="group game">
@@ -340,7 +349,9 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
     const m = newCanvas(seg.w, seg.h), mc = m.getContext("2d"), id = mc.createImageData(seg.w, seg.h);
     for (let y = 0; y < seg.h; y++) for (let x = 0; x < seg.w; x++) {
       const cls = seg.mask[y * seg.w + x], p = { x: (x + 0.5) * W / seg.w, y: (y + 0.5) * H / seg.h };
-      if ((cls === 4 || cls === 5 || cls === 2) && !headZone(p) && p.y < k.hemY - k.sw * 0.13 && !handZone(p, cls === 2 ? 1 : 0.55)) id.data[(y * seg.w + x) * 4 + 3] = 255;
+      // 服は首元まで着物で覆う（首元に元の服が見えないように）。肌は、首・頭のあたりだけ覆わない
+      const cover = cls === 2 ? !headZone(p) : (cls === 4 || cls === 5) && below(p, k.neck, -k.sw * 0.6);
+      if (cover && p.y < k.hemY - k.sw * 0.13 && !handZone(p, cls === 2 ? 1 : 0.55)) id.data[(y * seg.w + x) * 4 + 3] = 255;
     }
     mc.putImageData(id, 0, 0); coverSmall = m;
     const cover = sharpMask(m), cc = cover.getContext("2d");
@@ -377,17 +388,26 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
     if (!back) {
       c.beginPath(); c.moveTo(k.obiBot.x, k.obiBot.y); c.lineTo(k.obiBot.x + k.down.x * (k.hemY - k.obiBot.y), Math.min(H, k.hemY)); c.stroke(); // おくみ線
       // 3) 衿元：首まわりは写真を見せて、衿を重ねる。右前（着る人の左の衿が上 ＝ 正面からは「y」の形）
-      c.save(); c.globalCompositeOperation = "destination-out";
-      poly(c, [add(k.nR, k.down, -k.sw * 0.6), add(k.nL, k.down, -k.sw * 0.6), add(k.nL, k.side, k.sw * 0.02), add(k.vb, k.down, -k.sw * 0.25), add(k.nR, k.side, -k.sw * 0.02)], "#000"); c.restore();
+      // 写真では、衿の上はしを「写真の首の肌が終わる高さ」に合わせる（首はそのまま本物の肌、そのすぐ下から衿）
+      let nR = k.nR, nL = k.nL, vb = k.vb;
+      if (photo && seg?.mask) { let deep = null;
+        for (let y = 0; y < seg.h; y++) for (let x = 0; x < seg.w; x++) { if (seg.mask[y * seg.w + x] !== 2) continue; const p = { x: (x + 0.5) * W / seg.w, y: (y + 0.5) * H / seg.h };
+          const d = (p.x - k.neck.x) * k.down.x + (p.y - k.neck.y) * k.down.y, l = Math.abs((p.x - k.neck.x) * k.side.x + (p.y - k.neck.y) * k.side.y);
+          if (l < k.sw * 0.18 && d > -k.sw * 0.6 && d < k.sw * 0.8 && (deep === null || d > deep)) deep = d; }
+        if (deep !== null) { const dd = Math.max(-k.sw * 0.3, Math.min(k.sw * 0.5, deep - k.sw * 0.03)) + k.sw * 0.06; nR = add(k.nR, k.down, dd); nL = add(k.nL, k.down, dd);
+          const vd = (k.vb.x - k.neck.x) * k.down.x + (k.vb.y - k.neck.y) * k.down.y; if (vd < dd + k.sw * 0.3) vb = add(k.vb, k.down, dd + k.sw * 0.3 - vd); } }
+      else { // 絵（ゲームのキャラ）では、首まわりの着物を切り抜いて、下の首と肌着を見せる
+        c.save(); c.globalCompositeOperation = "destination-out";
+        poly(c, [add(k.nR, k.down, -k.sw * 0.6), add(k.nL, k.down, -k.sw * 0.6), add(k.nL, k.side, k.sw * 0.02), add(k.vb, k.down, -k.sw * 0.25), add(k.nR, k.side, -k.sw * 0.02)], "#000"); c.restore(); }
       const obiL = add(k.obiTop, k.side, -k.hipW * 0.42);
       // 衿：内側に白い半衿が細くのぞき、その外側を着物と同じ布の衿（少し濃く）が囲む
-      const vbR = add(k.vb, k.side, -ew * 0.2), collar = (from, to, off, w) => { const o2 = off + Math.sign(off) * w * 0.62;
+      const vbR = add(vb, k.side, -ew * 0.2), collar = (from, to, off, w) => { const o2 = off + Math.sign(off) * w * 0.62;
         band(add(from, k.side, o2), add(to, k.side, o2), w * 0.35, "rgba(0,0,0,.12)"); // 衿の落とす影
         band(add(from, k.side, off), add(to, k.side, off), w, fill); band(add(from, k.side, off), add(to, k.side, off), w, "rgba(0,0,0,.2)");
         band(add(from, k.side, off + Math.sign(off) * w * 0.5), add(to, k.side, off + Math.sign(off) * w * 0.5), Math.max(1, w * 0.1), "rgba(0,0,0,.4)"); }; // ふちの線
 
-      collar(k.nR, vbR, -ew * 0.62, ew); band(k.nR, vbR, ew * 0.62, eri); band(add(k.nR, k.side, ew * 0.22), add(vbR, k.side, ew * 0.22), ew * 0.1, "rgba(0,0,0,.10)"); // 下になる衿（着る人の右）
-      collar(k.nL, obiL, ew * 0.66, ew * 1.05); band(k.nL, obiL, ew * 0.66, eri); band(add(k.nL, k.side, -ew * 0.28), add(obiL, k.side, -ew * 0.28), ew * 0.12, "rgba(0,0,0,.2)"); // 上になる衿（着る人の左）
+      collar(nR, vbR, -ew * 0.62, ew); band(nR, vbR, ew * 0.62, eri); band(add(nR, k.side, ew * 0.22), add(vbR, k.side, ew * 0.22), ew * 0.1, "rgba(0,0,0,.10)"); // 下になる衿（着る人の右）
+      collar(nL, obiL, ew * 0.66, ew * 1.05); band(nL, obiL, ew * 0.66, eri); band(add(nL, k.side, -ew * 0.28), add(obiL, k.side, -ew * 0.28), ew * 0.12, "rgba(0,0,0,.2)"); // 上になる衿（着る人の左）
     } else {
       // 後ろ姿：背縫いと、衣紋（女の人は首の後ろを少しあける）
       c.beginPath(); c.moveTo(k.neck.x, k.neck.y); c.lineTo(k.hm.x + k.down.x * (k.hemY - k.hm.y), Math.min(H, k.hemY)); c.stroke(); // 背縫い
@@ -537,39 +557,6 @@ function drawKimono(newCanvas, W, H, lm, opts, photo, seg) {
     }
     mc.putImageData(id, 0, 0);
     c.save(); c.globalCompositeOperation = "destination-out"; c.drawImage(sharpMask(m), 0, 0); c.restore();
-  }
-  // 7) 首元に元の服（えり・タートルネック・フードなど）が写っている所は、すぐ上の本物の首の肌を下へのばして素肌の首にする（下ほど少し影）。着物の下に入れる
-  if (photo && seg?.mask) {
-    const SW = seg.w, SH = seg.h, sm = newCanvas(SW, SH), sc = sm.getContext("2d"); sc.drawImage(photo, 0, 0, SW, SH); const pd = sc.getImageData(0, 0, SW, SH).data;
-    const at = (x, y) => ({ x: (x + 0.5) * W / SW, y: (y + 0.5) * H / SH }), lat = p => Math.abs((p.x - k.neck.x) * k.side.x + (p.y - k.neck.y) * k.side.y);
-    const m = newCanvas(SW, SH), mc = m.getContext("2d"), id = mc.createImageData(SW, SH); let any = false;
-    for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) { const cls = seg.mask[y * SW + x], p = at(x, y);
-      if ((cls === 4 || cls === 5) && below(p, k.neck, -k.sw * 0.6) && !below(p, k.neck, k.sw * 0.9) && lat(p) < k.sw * 0.42) { id.data[(y * SW + x) * 4 + 3] = 255; any = true; } }
-    // 1 マスずつ広げて、服のふちの色が細く残らないようにする（顔や髪の上には広げない）
-    const grow = new Uint8Array(SW * SH);
-    for (let y = 1; y < SH - 1; y++) for (let x = 1; x < SW - 1; x++) { const i = y * SW + x, cls = seg.mask[i];
-      if (!id.data[i * 4 + 3] && cls !== 1 && cls !== 3 && (id.data[(i - 1) * 4 + 3] || id.data[(i + 1) * 4 + 3] || id.data[(i - SW) * 4 + 3] || id.data[(i + SW) * 4 + 3])) grow[i] = 1; }
-    for (let i = 0; i < grow.length; i++) if (grow[i]) id.data[i * 4 + 3] = 255;
-    if (any) {
-      // 肌の平均（上に肌が見つからない所に使う）
-      let r = 0, g = 0, b = 0, n = 0;
-      for (let i = 0; i < SW * SH; i++) { const cls = seg.mask[i]; if ((cls === 2 && headZone(at(i % SW, Math.floor(i / SW)))) || cls === 3) { r += pd[i * 4]; g += pd[i * 4 + 1]; b += pd[i * 4 + 2]; n++; } }
-      if (n) { r /= n; g /= n; b /= n; } else { r = 214; g = 170; b = 146; }
-      const col = mc.createImageData(SW, SH), cd = col.data, maxUp = Math.round(k.sw * 1.2 * SH / H), fade = Math.max(1, k.sw * 0.5 * SH / H);
-      for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) { const i = y * SW + x; if (!id.data[i * 4 + 3]) continue;
-        let yy = y - 1, found = -1; // 上へたどって、いちばん近い肌（首・あご）を探す
-        while (yy >= 0 && y - yy <= maxUp) { const cls = seg.mask[yy * SW + x]; if (cls === 2 || cls === 3) { found = yy; break; } if (cls === 0 || cls === 1) break; yy--; }
-        const f = found >= 0 ? 1 - 0.16 * Math.min(1, (y - found) / fade) : 0.92, q = found >= 0 ? (Math.max(0, found - 2) * SW + x) * 4 : -1;
-        cd[i * 4] = (q >= 0 ? pd[q] : r) * f; cd[i * 4 + 1] = (q >= 0 ? pd[q + 1] : g) * f; cd[i * 4 + 2] = (q >= 0 ? pd[q + 2] : b) * f; cd[i * 4 + 3] = 255; }
-      // 横に少しならして、縦すじを目立たなくする
-      const rad = Math.max(1, Math.round(SW / 160)), tmp = new Uint8ClampedArray(cd);
-      for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) { const i = y * SW + x; if (!id.data[i * 4 + 3]) continue; let sr = 0, sg = 0, sb = 0, sn = 0;
-        for (let d = -rad; d <= rad; d++) { const xx = x + d; if (xx < 0 || xx >= SW || !id.data[(i + d) * 4 + 3]) continue; sr += tmp[(i + d) * 4]; sg += tmp[(i + d) * 4 + 1]; sb += tmp[(i + d) * 4 + 2]; sn++; }
-        cd[i * 4] = sr / sn; cd[i * 4 + 1] = sg / sn; cd[i * 4 + 2] = sb / sn; }
-      const cs = newCanvas(SW, SH); cs.getContext("2d").putImageData(col, 0, 0);
-      mc.putImageData(id, 0, 0); const sk = sharpMask(m), skc = sk.getContext("2d"); skc.globalCompositeOperation = "source-in"; skc.imageSmoothingEnabled = true; skc.drawImage(cs, 0, 0, W, H);
-      c.save(); c.globalCompositeOperation = "destination-over"; c.drawImage(sk, 0, 0); c.restore();
-    }
   }
   return layer;
 }
@@ -890,7 +877,12 @@ function startAction(add, type, key = add, msg = null, step = {}) {
   $("#gMsg").textContent = msg || ((type === "eri" ? "" : `◯ ${ITEMS[add].name}！ `) + ACTION_MSG[type]);
   renderGame(); requestAnimationFrame(actionTick);
 }
-function startStep() { const g = state.game, s = g.steps[g.si]; setBack(s.view === "back"); startAction(s.add || null, s.type, s.geo || s.add, `${g.si + 1}. ${s.name}：${s.msg}`, s); }
+// 着付け体験：手順ごとに、始める前に大きく説明を出す（読んでいる間はタイマーを止め、指の動きも受け付けない）
+const STEP_ICON = { down: "👇", up: "👆", spin: "🔄", spin1: "🔄", across: "👉", tie: "🎀", eri: "✋", hem: "↕️", pull: "💪" };
+function startStep() { const g = state.game, s = g.steps[g.si]; setBack(s.view === "back"); startAction(s.add || null, s.type, s.geo || s.add, `${g.si + 1}. ${s.name}：${s.msg}`, s);
+  g.paused = true; g.pauseAt = performance.now();
+  $("#scNo").textContent = `手順 ${g.si + 1} / ${g.steps.length}`; $("#scName").textContent = s.name; $("#scIcon").textContent = STEP_ICON[s.type] || "👆"; $("#scHow").textContent = s.msg; $("#stepCard").hidden = false; }
+function stepGo() { const g = state.game; if (!g?.paused) return; g.pausedMs = (g.pausedMs || 0) + performance.now() - g.pauseAt; g.paused = false; $("#stepCard").hidden = true; }
 function actionTick() { if (state.game?.action && !$("#game").hidden) { drawGame(); requestAnimationFrame(actionTick); } }
 function finishAction() {
   const g = state.game, a = g.action;
@@ -981,7 +973,7 @@ function drawAction(c, a, t, back = false) {
 }
 function actionPoint(e) { const r = $("#gcv").getBoundingClientRect(); return { x: (e.clientX - r.left) * CHAR_W / r.width, y: (e.clientY - r.top) * CHAR_H / r.height }; }
 function actionDown(e) {
-  const a = state.game?.action; if (!a) return; e.preventDefault();
+  const a = state.game?.action; if (!a || state.game.paused) return; e.preventDefault();
   const pt = actionPoint(e), g = a.geo; $("#gcv").setPointerCapture?.(e.pointerId);
   a.drag = { start: pt, last: pt, hand: null };
   if (a.type === "tie") { const d = a.hands.map(h => Math.hypot(h - pt.x, g.y - pt.y)), i = d[0] < d[1] ? 0 : 1; a.drag.hand = d[i] < 60 ? i : null; }
@@ -1034,11 +1026,12 @@ const MODES = [{ id: "quiz", name: "順番クイズ", note: "品物を正しい�
   { id: "real", name: "着付け体験", note: "本物の着付けの手順を、1 つずつ指で体験する。裾の長さや帯の締め具合で「仕上がり」の点が決まる。" }];
 const LEVEL_REAL = { easy: "合わせる幅が広い", normal: "ふつう", hard: "合わせる幅がせまい" };
 const bestKey = () => `ki_best_${state.mode === "real" ? "real_" : ""}${state.sex}_${state.level}`;
-const gameTime = g => (performance.now() - g.start) / 1000 + g.pen;
+const gameTime = g => (performance.now() - g.start - (g.pausedMs || 0) - (g.paused ? performance.now() - g.pauseAt : 0)) / 1000 + g.pen; // 説明を読んでいる時間は数えない
 function renderGame() {
   const g = state.game, real = (g?.mode || state.mode) === "real";
   $("#gameIdle").hidden = !!g; $("#gamePlay").hidden = !g || g.done; $("#gameEnd").hidden = !g || !g.done;
   $("#gPanel").classList.toggle("playing", !!g);
+  $("#stepCard").hidden = !(g && !g.done && g.paused);
   $("#modes").innerHTML = MODES.map(m => `<button class="chip ${m.id === state.mode ? "on" : ""}" data-mode="${m.id}">${m.name}</button>`).join("");
   $("#modeNote").textContent = MODES.find(m => m.id === state.mode).note;
   $("#levels").innerHTML = LEVELS.map(l => `<button class="chip ${l.id === state.level ? "on" : ""}" data-level="${l.id}">${l.name}</button>`).join("");
@@ -1145,6 +1138,7 @@ document.addEventListener("click", async e => {
     case "turn": setBack(!turn.back); break;
     case "openGame": show("game"); renderChips(); drawGame(); renderGame(); break;
     case "gameStart": startGame(); break;
+    case "stepGo": stepGo(); break;
     case "ai": aiRealize(); break;
     case "gameQuit": stopGame(); break;
     case "save": out.toBlob(async b => {
