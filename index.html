@@ -691,34 +691,58 @@ const eyesOf = (lm, W, H) => lm && lm[2] && lm[5] && (lm[2].visibility ?? 1) > 0
 // 小さいマスク（seg の大きさ）を作る
 function segCanvas(seg, test) { const cv = newCanvas(seg.w, seg.h), x = cv.getContext("2d"), id = x.createImageData(seg.w, seg.h);
   for (let i = 0; i < seg.mask.length; i++) if (test(seg.mask[i], i)) id.data[i * 4 + 3] = 255; x.putImageData(id, 0, 0); return cv; }
-// モデル写真の振袖を、お店の布に張りかえる（しわや影はモデル写真の明るさから取る。帯・衿・顔・手はそのまま）
+// モデル写真の振袖を、お店の布に張りかえる（しわや影はモデル写真の明るさから取る）。
+// 袖・身ごろ・胸元は布に、帯と帯揚げは布に合う色に染めかえる（帯の織りのしわは残す）。顔・髪・手（肌）は塗らない
 const TPL_KIMONO = [
   [[150, 196], [130, 200], [112, 225], [103, 262], [101, 628], [110, 641], [140, 644], [150, 636]], // 左の袖（向かって左）
   [[270, 196], [300, 205], [335, 222], [372, 240], [374, 628], [366, 640], [285, 642], [276, 630], [276, 330]], // 右の袖
   [[148, 342], [274, 342], [276, 706], [147, 706]], // 帯より下の身ごろ
-  [[236, 198], [250, 190], [272, 198], [278, 228], [258, 228]], // 右胸
+  [[148, 200], [192, 194], [204, 222], [148, 224]], // 左胸（向かって左）
+  [[222, 222], [236, 198], [250, 190], [272, 198], [278, 224]], // 右胸
 ];
+const TPL_OBI = [[[148, 262], [276, 262], [276, 342], [148, 342]]], TPL_AGE = [[[146, 222], [278, 222], [276, 262], [148, 262]]]; // 帯と、その上の帯揚げ（ふわふわの飾り）
+function tplMask(T, polys) { const { W, H } = T, sc = W / 450, M = newCanvas(W, H), mc = M.getContext("2d"); mc.fillStyle = "#000";
+  for (const poly of polys) { mc.beginPath(); poly.forEach(([x, y], i) => i ? mc.lineTo(x * sc, y * sc) : mc.moveTo(x * sc, y * sc)); mc.closePath(); mc.fill(); }
+  const sm = newCanvas(Math.round(W / 3), Math.round(H / 3)); sm.getContext("2d").drawImage(M, 0, 0, sm.width, sm.height); mc.clearRect(0, 0, W, H); mc.imageSmoothingEnabled = true; mc.drawImage(sm, 0, 0, W, H); // ふちを少しぼかす
+  // 肌・顔・髪は塗らない（胸より上だけ。下の桃色の花の柄を肌とまちがえないように）
+  if (T.seg) { mc.globalCompositeOperation = "destination-out"; mc.imageSmoothingEnabled = true; mc.drawImage(segCanvas(T.seg, (cls, i) => (cls === 1 || cls === 2 || cls === 3) && (Math.floor(i / T.seg.w) + 0.5) * H / T.seg.h < 250 * sc), 0, 0, W, H); }
+  return mc.getImageData(0, 0, W, H).data; }
 function tplRecolor(T, fid) {
   if (fid === "orig") return T.cv;
   T.vars = T.vars || {}; if (T.vars[fid]) return T.vars[fid];
   const img = fabricOf(fid); if (!img) return T.cv;
-  const { W, H } = T, sc = W / 450;
-  // 張りかえる所：モデル写真（450×800）に合わせて手で決めた形（両袖・帯より下の身ごろ・右胸）。帯・帯揚げ・衿・顔・手は入れない
-  const M = newCanvas(W, H), mc = M.getContext("2d"); mc.fillStyle = "#000";
-  for (const poly of TPL_KIMONO) { mc.beginPath(); poly.forEach(([x, y], i) => i ? mc.lineTo(x * sc, y * sc) : mc.moveTo(x * sc, y * sc)); mc.closePath(); mc.fill(); }
-  { const sm = newCanvas(Math.round(W / 3), Math.round(H / 3)); sm.getContext("2d").drawImage(M, 0, 0, sm.width, sm.height); mc.clearRect(0, 0, W, H); mc.imageSmoothingEnabled = true; mc.drawImage(sm, 0, 0, W, H); } // ふちを少しぼかす
+  const { W, H } = T, A = tplMask(T, TPL_KIMONO), B = tplMask(T, TPL_OBI), G = tplMask(T, TPL_AGE);
   // 明るさ（元の柄がうつらないように少しぼかす）
   const bw = Math.max(8, Math.round(W / 18)), small = newCanvas(Math.round(W / bw), Math.round(H / bw)); small.getContext("2d").drawImage(T.cv, 0, 0, small.width, small.height);
   const blur = newCanvas(W, H), bc = blur.getContext("2d"); bc.imageSmoothingEnabled = true; bc.imageSmoothingQuality = "high"; bc.drawImage(small, 0, 0, W, H);
-  const L = bc.getImageData(0, 0, W, H).data, A = mc.getImageData(0, 0, W, H).data, lum = i => 0.299 * L[i] + 0.587 * L[i + 1] + 0.114 * L[i + 2];
-  const vals = []; for (let i = 0; i < A.length; i += 4 * 13) if (A[i + 3] > 200) vals.push(lum(i)); vals.sort((a, b) => a - b); const ref = vals.length ? vals[Math.floor(vals.length * 0.92)] : 230;
+  const L = bc.getImageData(0, 0, W, H).data, O = T.cv.getContext("2d").getImageData(0, 0, W, H).data, lum = (a, i) => 0.299 * a[i] + 0.587 * a[i + 1] + 0.114 * a[i + 2];
+  const refOf = (mask, src) => { const v = []; for (let i = 0; i < mask.length; i += 4 * 13) if (mask[i + 3] > 200) v.push(lum(src, i)); v.sort((a, b) => a - b); return v.length ? v[Math.floor(v.length * 0.9)] : 230; };
+  const ref = refOf(A, L), refO = refOf(B, O), refG = refOf(G, O);
+  const hex = (COLORS.find(c => c.id === fabricColor(fid)) || COLORS[0]).obi, oc3 = [1, 3, 5].map(j => parseInt(hex.slice(j, j + 2), 16)), ag3 = fabricColor(fid) === "momo" ? [247, 200, 212] : [240, 167, 184]; // 帯揚げは淡い桃色
   const F = newCanvas(W, H), fc = F.getContext("2d"); fc.fillStyle = fc.createPattern(fabricTile(newCanvas, img, Math.round(W * 0.6)), "repeat"); fc.fillRect(0, 0, W, H);
   const fd = fc.getImageData(0, 0, W, H), f = fd.data;
-  for (let i = 0; i < f.length; i += 4) { if (!A[i + 3]) { f[i + 3] = 0; continue; } const sh = Math.max(0.72, Math.min(1.05, 1 - (1 - lum(i) / ref) * 0.5)); // 影を少し弱めて、元の柄の影がうつらないように
+  for (let i = 0; i < f.length; i += 4) {
+    if (G[i + 3] > A[i + 3] && G[i + 3] >= B[i + 3]) { const sh = Math.max(0.55, Math.min(1.12, Math.pow(lum(O, i) / refG, 1.6) * 1.04));
+      f[i] = Math.min(255, ag3[0] * sh); f[i + 1] = Math.min(255, ag3[1] * sh); f[i + 2] = Math.min(255, ag3[2] * sh); f[i + 3] = G[i + 3]; continue; }
+    if (B[i + 3] > A[i + 3]) { const sh = Math.max(0.4, Math.min(1.25, Math.pow(lum(O, i) / refO, 2.2) * 1.08)); // 帯：元の帯の明るさ（織りのしわ）をそのまま、色だけ変える
+      f[i] = Math.min(255, oc3[0] * sh); f[i + 1] = Math.min(255, oc3[1] * sh); f[i + 2] = Math.min(255, oc3[2] * sh); f[i + 3] = B[i + 3]; continue; }
+    if (!A[i + 3]) { f[i + 3] = 0; continue; }
+    const sh = Math.max(0.72, Math.min(1.05, 1 - (1 - lum(L, i) / ref) * 0.5)); // 影を少し弱めて、元の柄の影がうつらないように
     f[i] *= sh; f[i + 1] *= sh; f[i + 2] *= sh; f[i + 3] = A[i + 3]; }
   fc.putImageData(fd, 0, 0);
-  const out = newCanvas(W, H), oc = out.getContext("2d"); oc.drawImage(T.cv, 0, 0); oc.drawImage(F, 0, 0);
+  const out = newCanvas(W, H), o = out.getContext("2d"); o.drawImage(T.cv, 0, 0); o.drawImage(F, 0, 0);
   return (T.vars[fid] = out);
+}
+// 穴（mask の所）を、まわりの色でなめらかに埋める（壁などの背景用）
+function fillHoles(src, hole, W, H) {
+  const A = newCanvas(W, H), ac = A.getContext("2d"); ac.drawImage(src, 0, 0); ac.globalCompositeOperation = "destination-out"; ac.drawImage(hole, 0, 0);
+  const level = s => { const sm = newCanvas(Math.max(2, Math.round(W / s)), Math.max(2, Math.round(H / s))), x = sm.getContext("2d"); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high"; x.drawImage(A, 0, 0, sm.width, sm.height);
+    const big = newCanvas(W, H), b = big.getContext("2d"); b.imageSmoothingEnabled = true; b.imageSmoothingQuality = "high"; b.drawImage(sm, 0, 0, W, H); return b.getImageData(0, 0, W, H).data; };
+  const f1 = level(10), f2 = level(28), f3 = level(80);
+  const out = newCanvas(W, H), oc = out.getContext("2d"); oc.drawImage(src, 0, 0); const od = oc.getImageData(0, 0, W, H), d = od.data, hd = hole.getContext("2d").getImageData(0, 0, W, H).data;
+  for (let i = 0; i < d.length; i += 4) { const h = hd[i + 3] / 255; if (!h) continue; const s = f1[i + 3] > 60 ? f1 : f2[i + 3] > 30 ? f2 : f3;
+    for (let ch = 0; ch < 3; ch++) d[i + ch] = d[i + ch] * (1 - h) + s[i + ch] * h; }
+  oc.putImageData(od, 0, 0); return out;
 }
 function renderFace() {
   const out = $("#out"), T = state.tpl;
@@ -731,14 +755,27 @@ function renderFace() {
   if (!U || !V || !T.seg || !state.seg) { $("#note").textContent = state.lm === undefined ? "" : "顔が見つかりませんでした。正面を向いて、顔がはっきり写った写真で試してください。"; return; }
   // 目の位置を合わせる（回転・拡大・移動）
   const mid = P => ({ x: (P[0].x + P[1].x) / 2, y: (P[0].y + P[1].y) / 2 }), len = P => Math.hypot(P[1].x - P[0].x, P[1].y - P[0].y), ang = P => Math.atan2(P[1].y - P[0].y, P[1].x - P[0].x);
-  const um = mid(U), vm = mid(V), sc = len(V) / len(U), rot = ang(V) - ang(U);
+  const um = mid(U), vm = mid(V), sc = len(V) / len(U), rot = ang(V) - ang(U), ed = len(V);
   const place = (x, src, w, h) => { x.save(); x.translate(vm.x, vm.y); x.rotate(rot); x.scale(sc, sc); x.translate(-um.x, -um.y); x.drawImage(src, 0, 0, w, h); x.restore(); };
+  const big = (small, grow) => { const M = newCanvas(T.W, T.H), x = M.getContext("2d"); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high"; x.drawImage(small, 0, 0, T.W, T.H);
+    if (grow) { const d = x.getImageData(0, 0, T.W, T.H); for (let i = 3; i < d.data.length; i += 4) d.data[i] = d.data[i] > 10 ? 255 : 0; x.putImageData(d, 0, 0);
+      const sm = newCanvas(Math.round(T.W / 8), Math.round(T.H / 8)); sm.getContext("2d").drawImage(M, 0, 0, sm.width, sm.height); x.clearRect(0, 0, T.W, T.H); x.drawImage(sm, 0, 0, T.W, T.H); } return M; }; // ふちをぼかして、壁となじませる
+  // 1) モデルの髪・髪飾り・顔を消して、まわりの壁の色で埋める（肩より上だけ）
+  const shoulderY = T.lm ? Math.min(T.lm[11].y, T.lm[12].y) * T.H : T.H * 0.25;
+  // 消す所：髪・顔・小物と、頭のまわり（髪飾りの花など）。肌（あごの手・首）は消さない
+  const hc0 = { x: vm.x, y: vm.y - ed * 0.7 }, hx = ed * 2.5, hy = ed * 2.5;
+  const hole = big(segCanvas(T.seg, (cls, i) => { const x = (i % T.seg.w + 0.5) * T.W / T.seg.w, y = (Math.floor(i / T.seg.w) + 0.5) * T.H / T.seg.h; if (y >= shoulderY || cls === 2) return false;
+    return cls === 1 || cls === 3 || cls === 5 || ((x - hc0.x) / hx) ** 2 + ((y - hc0.y) / hy) ** 2 < 1; }), true);
+  const filled = fillHoles(base, hole, T.W, T.H); c.drawImage(filled, 0, 0);
+  // 2) 撮った写真の頭（髪と顔）をはめる
   const F = newCanvas(T.W, T.H), fc = F.getContext("2d"); fc.imageSmoothingQuality = "high"; place(fc, state.photo, state.W, state.H);
-  // 置きかえる所 = モデルの顔の肌（髪・髪飾り・あごに添えた手はモデル写真のまま）。中は撮った顔だけで埋める
-  const M = newCanvas(T.W, T.H), mc = M.getContext("2d"); mc.imageSmoothingEnabled = true; mc.imageSmoothingQuality = "high";
-  mc.drawImage(segCanvas(T.seg, cls => cls === 3), 0, 0, T.W, T.H);
-  fc.globalCompositeOperation = "destination-in"; fc.drawImage(M, 0, 0);
-  c.drawImage(F, 0, 0);
+  const M = newCanvas(T.W, T.H), mc = M.getContext("2d"); mc.imageSmoothingEnabled = true; mc.imageSmoothingQuality = "high"; place(mc, segCanvas(state.seg, cls => cls === 1 || cls === 3), state.W, state.H);
+  fc.globalCompositeOperation = "destination-in"; fc.drawImage(M, 0, 0); c.drawImage(F, 0, 0);
+  // 3) モデルのあごに添えた手は手前に残す（顔の近くにある手首のまわりの肌）
+  if (T.lm) { const wr = [15, 16].map(i => ({ x: T.lm[i].x * T.W, y: T.lm[i].y * T.H })).sort((a, b) => Math.hypot(a.x - vm.x, a.y - vm.y) - Math.hypot(b.x - vm.x, b.y - vm.y))[0];
+    if (Math.hypot(wr.x - vm.x, wr.y - vm.y) < ed * 5) {
+      const hand = big(segCanvas(T.seg, (cls, i) => cls === 2 && Math.hypot((i % T.seg.w + 0.5) * T.W / T.seg.w - wr.x, (Math.floor(i / T.seg.w) + 0.5) * T.H / T.seg.h - wr.y) < ed * 2.4), false);
+      const Hd = newCanvas(T.W, T.H), hc = Hd.getContext("2d"); hc.drawImage(base, 0, 0); hc.globalCompositeOperation = "destination-in"; hc.drawImage(hand, 0, 0); c.drawImage(Hd, 0, 0); } }
   state.result = true; $("#holdBtn").hidden = false;
   $("#note").textContent = "写真を長押し（または左下のボタン）で、元のモデル写真と比べられます。";
 }
