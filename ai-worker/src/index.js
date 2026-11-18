@@ -6,7 +6,9 @@
 const MODEL = "@cf/runwayml/stable-diffusion-v1-5-inpainting";
 const ORIGINS = ["https://yangxiangyangxiang468-tech.github.io"];
 const PATTERNS = { asanoha: "hemp leaf (asanoha) geometric", seigaiha: "wave (seigaiha)", sakura: "cherry blossom (sakura) floral", yagasuri: "arrow feather (yagasuri)", ichimatsu: "checkered (ichimatsu)",
-  "shop-green": "deep green silk with large white and gold peony flowers", "shop-white": "ivory silk with pastel flowers, maple leaves and gold accents", "shop-red": "crimson red silk with white plum blossom (ume) dots" };
+  "shop-green": "deep green silk with large white and gold peony flowers", "shop-white": "ivory silk with pastel flowers, maple leaves and gold accents", "shop-red": "crimson red silk with white plum blossom (ume) dots",
+  "shop-black": "black silk with colorful bamboo leaves, flowers and decorative balls (temari)", "shop-shibori": "white cotton with dark red snowflake shibori tie-dye",
+  "shop-blue": "white and blue cloud pattern cotton", "shop-purple": "lavender silk with white outlined flower petals" };
 const COLORS = { shu: "vermilion red", kon: "navy blue", momo: "pink", moegi: "green", fuji: "wisteria purple", sumi: "black" };
 const MAX_BYTES = 3 * 1024 * 1024;
 
