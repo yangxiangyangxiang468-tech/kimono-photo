@@ -168,7 +168,7 @@ div.item .sw { width: 18px; height: 18px; }
       <div class="panel" id="gPanel">
         <div class="group no-play"><h3>着せる人</h3><div class="seg" id="gSexes"></div></div>
         <div class="group game">
-          <h3>着付けゲーム <span class="note">（柄と色は毎回かわります）</span></h3>
+          <h3>着付けゲーム <span class="note">（着物はお店の布から毎回ランダム）</span></h3>
           <div id="gameIdle" style="display:grid;gap:10px">
             <div class="seg" id="modes"></div>
             <p class="note" id="modeNote"></p>
@@ -663,7 +663,7 @@ const FABRICS = [
   { id: "shop-purple", name: "紫の花", src: "shop/fabric-purple.jpg", color: "fuji" }];
 const fabricColor = id => (FABRICS.find(f => f.id === id) || FABRICS[0]).color;
 const fabricImg = {}, fabricOf = id => fabricImg[id] || null;
-for (const f of FABRICS) { const i = new Image(); i.onload = () => { fabricImg[f.id] = i; if (state.pattern === f.id) render(); }; i.src = f.src; }
+for (const f of FABRICS) { const i = new Image(); i.onload = () => { fabricImg[f.id] = i; if (state.pattern === f.id) render(); if (!$("#game").hidden) drawGame(); }; i.src = f.src; }
 if (!FABRICS.some(f => f.id === state.pattern)) state.pattern = FABRICS[0].id; // 写真モードはお店の布だけ
 // ---------- AIでリアルに ----------
 // アプリが描いた着物入りの写真と、着物の場所（マスク）を中継（Cloudflare Workers、ai-worker/）に送り、Stable Diffusion で着物の所だけ写真らしく描き直してもらう。
@@ -754,7 +754,7 @@ function drawChar(c, sex, wear, look, view = {}) {
       for (let i = 0; i <= 6; i++) ell(pl + (pr - pl) * i / 6, Lk.y, W * 0.014, H * 0.007, "#fbf3ee"); } // すそのレース（左右そろえる）
   }
   // 着物
-  const layer = drawKimono(newCanvas, W, H, lm, { pattern: look.pattern, color: look.color, sex, wear, back }, null, null);
+  const layer = drawKimono(newCanvas, W, H, lm, { pattern: look.pattern, color: look.color, fabric: fabricOf(look.pattern), sex, wear, back }, null, null);
   if (layer) c.drawImage(layer, 0, 0);
   // 手
   for (const [e, w] of [[13, 15], [14, 16]]) { const E = P(e), Wr = P(w); ell(Wr.x + (Wr.x - E.x) * 0.06, Wr.y + (Wr.y - E.y) * 0.06, W * 0.034, W * 0.038, SKIN); } // 袖口に重ねる
@@ -797,7 +797,7 @@ function drawGame() {
   const k = Math.min(1, (performance.now() - turn.t0) / 360), back = k < 0.5 ? turn.from : turn.back, sx = Math.max(0.04, Math.abs(Math.cos(k * Math.PI)));
   const off = drawGame.off || (drawGame.off = newCanvas(CHAR_W, CHAR_H)), oc = off.getContext("2d");
   if (g?.action) drawAction(oc, g.action, performance.now(), back);
-  else drawChar(oc, state.sex, g ? g.worn : [], g || { pattern: state.pattern, color: state.color }, { back, casual: !g });
+  else drawChar(oc, state.sex, g ? g.worn : [], g || { pattern: state.pattern, color: fabricColor(state.pattern) }, { back, casual: !g });
   c.clearRect(0, 0, CHAR_W, CHAR_H); c.save(); c.translate(CHAR_W / 2, 0); c.scale(sx, 1); c.drawImage(off, -CHAR_W / 2, 0); c.restore();
 }
 // ---- 指の動き（キャラの上で指を動かして着せる）----
@@ -1020,7 +1020,7 @@ function actionUp() {
 for (const [t, f] of [["pointerdown", actionDown], ["pointermove", actionMove], ["pointerup", actionUp], ["pointercancel", actionUp]]) document.getElementById("gcv").addEventListener(t, f, { passive: false });
 let gameTimer;
 const swatch = id => { const col = COLORS.find(c => c.id === (state.game?.color || state.color)) || COLORS[0];
-  return { hada: "#fbfaf7", juban: state.sex === "m" ? "#ece6dc" : "#f7eeea", kimono: col.base, date: "#e6d8e6", obi: col.obi, obiage: "#f0a7b8", obijime: "#d5373f", kaku: "#3b3230", hakama: "repeating-linear-gradient(90deg,#5f5b58 0 4px,#2c2a29 4px 5px)", haori: "#1f1b1a", himo: "#f4f1ea" }[id]; };
+  return { hada: "#fbfaf7", juban: state.sex === "m" ? "#ece6dc" : "#f7eeea", kimono: (FABRICS.find(f => f.id === (state.game?.pattern || state.pattern)) ? `url(${FABRICS.find(f => f.id === (state.game?.pattern || state.pattern)).src}) center/cover` : col.base), date: "#e6d8e6", obi: col.obi, obiage: "#f0a7b8", obijime: "#d5373f", kaku: "#3b3230", hakama: "repeating-linear-gradient(90deg,#5f5b58 0 4px,#2c2a29 4px 5px)", haori: "#1f1b1a", himo: "#f4f1ea" }[id]; };
 const MODES = [{ id: "quiz", name: "順番クイズ", note: "品物を正しい順番でタップして着せる。早く、まちがえずに着せるほど高い評価。" },
   { id: "real", name: "着付け体験", note: "本物の着付けの手順を、1 つずつ指で体験する。裾の長さや帯の締め具合で「仕上がり」の点が決まる。" }];
 const LEVEL_REAL = { easy: "合わせる幅が広い", normal: "ふつう", hard: "合わせる幅がせまい" };
@@ -1052,7 +1052,7 @@ function renderGame() {
 }
 function startGame() {
   clearInterval(gameTimer);
-  const pick = a => a[Math.floor(Math.random() * a.length)], common = { action: null, worn: [], miss: 0, pen: 0, level: state.level, start: performance.now(), done: false, hint: null, pattern: pick(PATTERNS).id, color: pick(COLORS).id };
+  const pick = a => a[Math.floor(Math.random() * a.length)], common = { action: null, worn: [], miss: 0, pen: 0, level: state.level, start: performance.now(), done: false, hint: null, ...(f => ({ pattern: f.id, color: f.color }))(pick(FABRICS)) };
   gameTimer = setInterval(() => { if (state.game && !state.game.done) $("#gTime").textContent = gameTime(state.game).toFixed(1); }, 100);
   $("#gTime").textContent = "0.0";
   if (state.mode === "real") { state.game = { ...common, mode: "real", steps: REAL[state.sex], si: 0, score: 100 }; drawGame(); startStep(); return; }
